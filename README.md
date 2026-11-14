@@ -2,7 +2,9 @@
 
 **Quotable** is an AI search audit. It checks whether AI search engines (Google AI Overviews, Copilot/Bing, ChatGPT search, Claude, Perplexity) can reach a page and quote it. Every finding cites the engine's own documentation.
 
-Live app: https://bharatisaket.github.io/ai-searchability/
+Live app: https://quotable-6j8a.onrender.com/ (runs live audits; the first load after a pause can take up to a minute)
+
+Paste-only copy: https://bharatisaket.github.io/ai-searchability/
 
 ## What is here
 
