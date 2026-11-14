@@ -30,6 +30,16 @@ Open http://localhost:8000 and the app switches to live mode on its own.
 
 The server refuses private and local network addresses, follows at most five redirects, and only serves `index.html` and `engine.js`. To host it, run it anywhere that runs Python with `HOST=0.0.0.0` and the platform's `PORT`. It has no rate limiting, so add one before sharing a hosted link widely.
 
+### Hosting on Render
+
+`render.yaml` is a Render Blueprint for a free web service.
+
+1. Sign in at https://dashboard.render.com and choose **New**, then **Blueprint**.
+2. Connect this GitHub repository and apply the Blueprint.
+3. Render builds the service and gives it an `onrender.com` address. Open it and the app runs in live mode.
+
+Free services sleep after about 15 minutes without traffic, so the first visit after a pause takes up to a minute to load. Each push to `main` redeploys.
+
 Tests:
 
 ```bash

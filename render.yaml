@@ -1,0 +1,15 @@
+# Render Blueprint: hosts server.py, which serves the app and runs live audits.
+services:
+  - type: web
+    name: quotable
+    runtime: python
+    plan: free
+    buildCommand: echo "No dependencies to install"
+    startCommand: python3 server.py
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PYTHON_VERSION
+        value: 3.12.7
