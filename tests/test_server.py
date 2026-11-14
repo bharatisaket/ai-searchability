@@ -70,9 +70,11 @@ class ServerTests(unittest.TestCase):
 
     def setUp(self):
         os.environ['QUOTABLE_ALLOW_PRIVATE'] = '1'
+        server.LIMITER = server.RateLimiter(1000, 1000)
 
     def tearDown(self):
         os.environ.pop('QUOTABLE_ALLOW_PRIVATE', None)
+        os.environ.pop('TRUST_PROXY', None)
 
     def post(self, url):
         req = urllib.request.Request(self.app_url + '/api/collect', json.dumps({'url': url}).encode(),
@@ -131,6 +133,40 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(server.is_public_ip('93.184.216.34'))
         for ip in ('127.0.0.1', '10.1.2.3', '192.168.1.1', '172.16.0.1', '169.254.1.1', '100.64.0.1', '::1', 'fe80::1', 'fc00::1'):
             self.assertFalse(server.is_public_ip(ip), ip)
+
+    def test_rate_limit_per_client(self):
+        server.LIMITER = server.RateLimiter(2, 1000)
+        self.post(self.site_url + '/page')
+        self.post(self.site_url + '/page')
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post(self.site_url + '/page')
+        self.assertEqual(ctx.exception.code, 429)
+        self.assertGreaterEqual(int(ctx.exception.headers['Retry-After']), 1)
+        self.assertIn('Too many audits', json.load(ctx.exception)['error'])
+
+    def test_rate_limit_uses_forwarded_address_behind_proxy(self):
+        os.environ['TRUST_PROXY'] = '1'
+        server.LIMITER = server.RateLimiter(1, 1000)
+
+        def post_as(ip):
+            req = urllib.request.Request(self.app_url + '/api/collect', json.dumps({'url': self.site_url + '/page'}).encode(),
+                                         {'Content-Type': 'application/json', 'X-Forwarded-For': ip + ', 10.0.0.9'})
+            return urllib.request.urlopen(req).status
+
+        self.assertEqual(post_as('203.0.113.5'), 200)
+        self.assertEqual(post_as('203.0.113.6'), 200)
+        with self.assertRaises(urllib.error.HTTPError):
+            post_as('203.0.113.5')
+
+    def test_rate_limiter_windows(self):
+        rl = server.RateLimiter(2, 3)
+        self.assertEqual(rl.check('a', 0), 0)
+        self.assertEqual(rl.check('a', 1), 0)
+        self.assertEqual(rl.check('a', 2), 59)          # a is over its own limit
+        self.assertEqual(rl.check('b', 3), 0)
+        self.assertEqual(rl.check('c', 4), 57)          # overall limit reached
+        self.assertEqual(rl.check('a', 61), 0)          # window moved on
+        self.assertEqual(rl.check('c', 61.5), 0)
 
     def test_rejects_bad_requests(self):
         for body in (b'', b'not json', b'{"url": 5}', b'[]'):

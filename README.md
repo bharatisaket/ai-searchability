@@ -28,7 +28,9 @@ python3 server.py
 
 Open http://localhost:8000 and the app switches to live mode on its own.
 
-The server refuses private and local network addresses, follows at most five redirects, and only serves `index.html` and `engine.js`. To host it, run it anywhere that runs Python with `HOST=0.0.0.0` and the platform's `PORT`. It has no rate limiting, so add one before sharing a hosted link widely.
+The server refuses private and local network addresses, follows at most five redirects, and only serves `index.html` and `engine.js`. To host it, run it anywhere that runs Python with `HOST=0.0.0.0` and the platform's `PORT`.
+
+Audits are rate limited: 10 per minute per visitor and 60 per minute across everyone. Change these with the `RATE_LIMIT_PER_CLIENT` and `RATE_LIMIT_GLOBAL` environment variables. Counts are kept in memory, so they reset when the server restarts.
 
 ### Hosting on Render
 

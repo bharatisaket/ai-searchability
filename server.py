@@ -11,6 +11,10 @@ Serves the app (index.html, engine.js) and two API routes:
 
 Run:  python3 server.py            (http://localhost:8000)
 Env:  PORT (default 8000), HOST (default 127.0.0.1; use 0.0.0.0 when hosting)
+      RATE_LIMIT_PER_CLIENT (default 10) audits per minute per visitor
+      RATE_LIMIT_GLOBAL (default 60) audits per minute across all visitors
+      TRUST_PROXY=1 reads the visitor address from X-Forwarded-For (set
+      automatically on Render, where every request arrives through its proxy)
       QUOTABLE_ALLOW_PRIVATE=1 lets it fetch private addresses (tests only).
 """
 import gzip
@@ -21,7 +25,10 @@ import os
 import socket
 import ssl
 import sys
+import threading
+import time
 import zlib
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urljoin, urlsplit
@@ -228,12 +235,71 @@ def collect(raw_url):
         }
 
 
+class RateLimiter:
+    """Sliding one-minute window, per visitor and across all visitors."""
+
+    WINDOW = 60.0
+    MAX_CLIENTS = 10000
+
+    def __init__(self, per_client, overall):
+        self.per_client = per_client
+        self.overall = overall
+        self.clients = {}
+        self.everyone = deque()
+        self.lock = threading.Lock()
+
+    def check(self, client, now=None):
+        """Record one audit. Returns 0 if allowed, else seconds to wait."""
+        now = time.monotonic() if now is None else now
+        cutoff = now - self.WINDOW
+        with self.lock:
+            while self.everyone and self.everyone[0] <= cutoff:
+                self.everyone.popleft()
+            mine = self.clients.get(client)
+            if mine is None:
+                if len(self.clients) >= self.MAX_CLIENTS:
+                    self.clients = {k: v for k, v in self.clients.items() if v and v[-1] > cutoff}
+                mine = self.clients[client] = deque()
+            while mine and mine[0] <= cutoff:
+                mine.popleft()
+            if len(mine) >= self.per_client:
+                return max(1, int(mine[0] - cutoff) + 1)
+            if len(self.everyone) >= self.overall:
+                return max(1, int(self.everyone[0] - cutoff) + 1)
+            mine.append(now)
+            self.everyone.append(now)
+            return 0
+
+
+def env_int(name, default):
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except ValueError:
+        return default
+
+
+LIMITER = RateLimiter(env_int('RATE_LIMIT_PER_CLIENT', 10), env_int('RATE_LIMIT_GLOBAL', 60))
+
+
+def trust_proxy():
+    return os.environ.get('TRUST_PROXY') == '1' or bool(os.environ.get('RENDER'))
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'Quotable/1.0'
 
-    def send_json(self, code, payload):
+    def client_id(self):
+        if trust_proxy():
+            forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+            if forwarded:
+                return forwarded[:64]
+        return self.client_address[0]
+
+    def send_json(self, code, payload, headers=None):
         data = json.dumps(payload).encode('utf-8')
         self.send_response(code)
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'no-store')
@@ -272,6 +338,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError
         except (ValueError, UnicodeDecodeError):
             return self.send_json(400, {'error': 'Send a JSON body with a url.'})
+        wait = LIMITER.check(self.client_id())
+        if wait:
+            return self.send_json(429, {'error': 'Too many audits right now. Try again in %d seconds.' % wait},
+                                  {'Retry-After': str(wait)})
         try:
             self.send_json(200, collect(raw_url))
         except AuditError as e:
