@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quotable AI Search Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one reading column; summary (score + engines) first, then fixes, then evidence. */
+:root {
+  --paper: #f3f5f8;
+  --card: #ffffff;
+  --ink: #131a26;
+  --muted: #566176;
+  --line: #d8dee8;
+  --accent: #1f4fd8;
+  --accent-ink: #ffffff;
+  --good: #14784a;  --good-bg: #e2f3ea;
+  --warn: #96590a;  --warn-bg: #fbefd9;
+  --bad: #b3312a;   --bad-bg: #fbe6e3;
+  --idle: #566176;  --idle-bg: #e8ecf2;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f141d; --card: #171e2a; --ink: #e8ecf3; --muted: #9aa6ba; --line: #2a3445;
+    --accent: #7ea2ff; --accent-ink: #0b1220;
+    --good: #5fd39a; --good-bg: #12301f; --warn: #f0b860; --warn-bg: #3a2a0c;
+    --bad: #ff8f86; --bad-bg: #3d1614; --idle: #9aa6ba; --idle-bg: #222b3a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f141d; --card: #171e2a; --ink: #e8ecf3; --muted: #9aa6ba; --line: #2a3445;
+  --accent: #7ea2ff; --accent-ink: #0b1220;
+  --good: #5fd39a; --good-bg: #12301f; --warn: #f0b860; --warn-bg: #3a2a0c;
+  --bad: #ff8f86; --bad-bg: #3d1614; --idle: #9aa6ba; --idle-bg: #222b3a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 400 16px/1.55 var(--body); }
+.wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 64px; display: flex; flex-direction: column; gap: 22px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 21px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; font-family: var(--body); }
+p { margin: 0; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+.muted { color: var(--muted); }
+.small { font-size: 13.5px; }
+header.top { display: flex; flex-direction: column; gap: 6px; }
+header.top p { color: var(--muted); max-width: 62ch; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+label { font-weight: 500; font-size: 14px; }
+input[type="url"], input[type="text"], textarea {
+  width: 100%; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px;
+}
+textarea { font-family: var(--mono); font-size: 13px; min-height: 110px; resize: vertical; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grow { flex: 1 1 260px; }
+button { font: 500 15px var(--body); border-radius: 8px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: 0.6; cursor: wait; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.notice { border-left: 3px solid var(--accent); background: var(--idle-bg); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14.5px; }
+.notice.err { border-color: var(--bad); background: var(--bad-bg); }
+.pill { display: inline-block; font: 500 12.5px var(--body); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.s-good { color: var(--good); background: var(--good-bg); }
+.s-warn { color: var(--warn); background: var(--warn-bg); }
+.s-bad { color: var(--bad); background: var(--bad-bg); }
+.s-idle { color: var(--idle); background: var(--idle-bg); }
+.summary { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.dial { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.dial svg { width: 150px; height: 150px; }
+.dial .num { font: 700 44px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
+.dial .of { font: 500 12px var(--body); fill: var(--muted); }
+.engines { display: flex; flex-direction: column; }
+.engine { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+.engine:first-child { border-top: 0; padding-top: 0; }
+.engine .why { grid-column: 1 / -1; color: var(--muted); font-size: 14px; }
+.engine .name { font-weight: 600; }
+.fixes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: fix; }
+.fix { counter-increment: fix; border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+.fix.blocker { border-left-color: var(--bad); }
+.fix.warning, .fix.fix-l { border-left-color: var(--warn); }
+.fix.improve { border-left-color: var(--idle); }
+.fix .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.fix .head strong::before { content: counter(fix) ". "; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fix .do { font-size: 15px; }
+pre { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font: 13px/1.5 var(--mono); }
+details.group { border-top: 1px solid var(--line); padding: 12px 0 2px; }
+details.group:first-of-type { border-top: 0; }
+details.group summary { cursor: pointer; display: grid; grid-template-columns: 1fr 120px 64px; gap: 12px; align-items: center; list-style: none; }
+details.group summary::-webkit-details-marker { display: none; }
+details.group summary .gname::before { content: "+ "; color: var(--muted); font-family: var(--mono); }
+details.group[open] summary .gname::before { content: "- "; }
+.bar { height: 8px; background: var(--idle-bg); border-radius: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.pts { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13.5px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin-top: 10px; }
+th, td { text-align: left; padding: 8px 10px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); font-size: 13px; border-top: 0; }
+td.n { font-family: var(--mono); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.checks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
+.checks label { font-weight: 400; font-size: 15px; display: flex; gap: 10px; align-items: flex-start; }
+.checks input { margin-top: 5px; accent-color: var(--accent); }
+ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+footer { color: var(--muted); font-size: 13.5px; }
+footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
+@media (max-width: 640px) {
+  .summary, .two { grid-template-columns: 1fr; }
+  details.group summary { grid-template-columns: 1fr 70px 56px; }
+  footer ul { columns: 1; }
+  h1 { font-size: 25px; }
+}
+@media (prefers-reduced-motion: no-preference) { .dial circle.arc { transition: stroke-dashoffset 0.6s ease; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Quotable</h1>
+    <p>Check whether AI search engines can reach a page and quote it. Every finding cites the engine's own documentation.</p>
+  </header>
+
+  <section class="card" aria-label="Run an audit">
+    <form id="form" class="field" novalidate>
+      <label for="url">Page URL</label>
+      <div class="row">
+        <input class="grow" id="url" type="url" inputmode="url" placeholder="https://example.com/pricing" autocomplete="url">
+        <button class="primary" id="run" type="submit">Run audit</button>
+      </div>
+      <div id="modeNote" class="small muted"></div>
+      <div id="paste" hidden>
+        <div class="two">
+          <div class="field">
+            <label for="html">Page source</label>
+            <textarea id="html" placeholder="Open the page, choose View Source, and paste the HTML here" spellcheck="false"></textarea>
+          </div>
+          <div class="field">
+            <label for="robots">robots.txt</label>
+            <textarea id="robots" placeholder="Paste the contents of yoursite.com/robots.txt (leave empty if the site has none)" spellcheck="false"></textarea>
+          </div>
+        </div>
+      </div>
+    </form>
+    <div id="msg" role="status" aria-live="polite"></div>
+  </section>
+
+  <div id="report"></div>
+
+  <footer>
+    Rules come from these guides. The score reports access and readability. It does not predict rankings or citations.
+    <ul id="sources"></ul>
+  </footer>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var E = window.AuditEngine;
+  var $ = function (id) { return document.getElementById(id); };
+  var live = false, lastReport = null;
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function src(s) { return s ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + '</a>' : ''; }
+
+  var STATE = {
+    open: ['Open', 's-good'], partial: ['Partly open', 's-warn'], blocked: ['Blocked', 's-bad'],
+    firewall: ['Check firewall', 's-bad'], restricted: ['Opted out', 's-bad'], unknown: ['Not checked', 's-idle']
+  };
+  var CHECK = { pass: ['Pass', 's-good'], warn: ['Partial', 's-warn'], fail: ['Fail', 's-bad'], na: ['N/A', 's-idle'] };
+  var LEVEL = { blocker: ['Blocker', 's-bad'], warning: ['Access', 's-warn'], fix: ['Fix', 's-warn'], improve: ['Improve', 's-idle'] };
+  var MANUAL = [
+    ['gsc', 'Site is verified in Google Search Console, and the generative AI control is set to include the site', 'G2'],
+    ['bwt', 'Site is added to Bing Webmaster Tools, the sitemap is submitted, and IndexNow is switched on', 'BING'],
+    ['hub', 'Business profile is claimed and verified in ChatGPT Business Hub', 'HUB'],
+    ['gbp', 'Google Business Profile and Merchant Center details are up to date', 'G1'],
+    ['li', 'For B2B: the LinkedIn company page is active and named experts publish structured posts', 'LI']
+  ];
+
+  // A made-up page with common mistakes, run through the real engine.
+  var SAMPLE = {
+    url: 'https://harborandpine.example/brew-guides/pour-over',
+    page: { status: 200, finalUrl: 'https://harborandpine.example/brew-guides/pour-over', xRobotsTag: '', body:
+      '<html><head><title>Home</title><link rel="canonical" href="https://harborandpine.example/brew-guides/pour-over"></head><body>' +
+      '<nav><a href="/">Home</a><a href="/shop">Shop</a><a href="/brew-guides">Brew guides</a><a href="/about">About</a></nav>' +
+      '<div class="page"><h1>Pour-over coffee guide</h1><h1>Harbor &amp; Pine Roasters</h1>' +
+      '<img src="v60.jpg"><img src="kettle.jpg"><img src="bloom.jpg" alt="Coffee blooming in a V60 dripper">' +
+      '<p>' + new Array(27).join('Pour-over coffee rewards patience and a steady hand, and our roasters have spent years refining it. ') + '</p>' +
+      '<h2>Learn more</h2><p>Use 15 grams of medium-fine coffee to 250 grams of water at 94 degrees Celsius. Bloom for 30 seconds, then pour in slow circles until the scale reads 250 grams. Total brew time should land between two and a half and three minutes.</p>' +
+      '<h2>Grind size and water temperature</h2><p>Grind slightly finer than table salt. Water just off the boil works for light roasts, and darker roasts taste better a few degrees cooler.</p>' +
+      '<p>' + new Array(14).join('If the cup tastes sour, grind finer; if it tastes bitter, grind coarser and pour a little faster. ') + '</p>' +
+      '</div><footer><a href="/contact">Contact</a></footer></body></html>' },
+    robots: { status: 200, body: 'User-agent: *\nDisallow: /cart/\n\n# keep AI out of our content\nUser-agent: GPTBot\nUser-agent: OAI-SearchBot\nUser-agent: ClaudeBot\nDisallow: /\n' },
+    sitemap: { status: 404 }, llms: { status: 404 },
+    ua: { browser: 200, Googlebot: 200, Bingbot: 200, 'OAI-SearchBot': 200, 'ChatGPT-User': 200, 'Claude-SearchBot': 200, 'Claude-User': 200, PerplexityBot: 403, 'Perplexity-User': 200 }
+  };
+
+  function dial(score, band) {
+    var r = 62, c = 2 * Math.PI * r, off = c * (1 - score / 100);
+    var color = band === 'strong' ? 'var(--good)' : band === 'fair' ? 'var(--warn)' : 'var(--bad)';
+    var label = band === 'strong' ? 'Strong' : band === 'fair' ? 'Fair' : 'Needs work';
+    return '<div class="dial"><svg viewBox="0 0 150 150" role="img" aria-label="Page score ' + score + ' out of 100">' +
+      '<circle cx="75" cy="75" r="' + r + '" fill="none" stroke="var(--idle-bg)" stroke-width="11"/>' +
+      '<circle class="arc" cx="75" cy="75" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 75 75)"/>' +
+      '<text class="num" x="75" y="84" text-anchor="middle">' + score + '</text><text class="of" x="75" y="104" text-anchor="middle">page score / 100</text></svg>' +
+      '<span class="pill ' + (band === 'strong' ? 's-good' : band === 'fair' ? 's-warn' : 's-bad') + '">' + label + '</span></div>';
+  }
+
+  function render(r, isSample) {
+    lastReport = r;
+    var h = '';
+    if (isSample) h += '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes, so you can see what an audit returns. Run your own above.</div>';
+
+    var open = r.engines.filter(function (e) { return e.state === 'open'; }).length;
+    h += '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
+      '<button id="copy" type="button">Copy report as Markdown</button></div>' +
+      '<div class="summary">' + dial(r.score, r.band) + '<div><p class="small muted" style="margin-bottom:8px">' + open + ' of ' + r.engines.length + ' engines can fully reach this page</p><div class="engines">' +
+      r.engines.map(function (e) {
+        var st = STATE[e.state];
+        return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + st[1] + '">' + st[0] + '</span><span class="why">' + esc(e.reason) + (e.note && e.state !== 'open' ? ' ' + esc(e.note) : '') + '</span></div>';
+      }).join('') + '</div></div></div>' +
+      (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test and sitemap lookup need the local app.</p>' : '') +
+      '</section>';
+
+    h += '<section class="card"><h2>Fix list</h2>';
+    if (!r.fixes.length) h += '<p>Nothing to fix. Every engine can reach this page and every check passed.</p>';
+    else {
+      h += '<p class="muted small">Access problems first, then checks by points lost.</p><ol class="fixes">' + r.fixes.map(function (f) {
+        var lv = LEVEL[f.level];
+        return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
+          (f.lost ? '<span class="small muted mono">-' + f.lost + ' pts</span>' : '') + '</div>' +
+          '<div class="muted small">' + esc(f.detail) + '</div><div class="do">' + esc(f.fix) + '</div><div class="small">' + src(f.source) + '</div></li>';
+      }).join('') + '</ol>';
+      if (r.robotsSnippet) h += '<h3>Add to robots.txt</h3><pre id="snippet">' + esc(r.robotsSnippet) + '</pre>' +
+        '<p class="small muted">A bot that has its own group ignores the <code>*</code> group, so copy across any Disallow lines you still want to apply to it. Remove the bot from any group that disallows it.</p>';
+    }
+    h += '</section>';
+
+    h += '<section class="card"><h2>Checks</h2>' + r.groups.map(function (g, i) {
+      return '<details class="group"' + (g.earned < g.max ? ' open' : '') + '><summary><span class="gname"><strong>' + esc(g.name) + '</strong></span>' +
+        '<span class="bar"><i style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="pts">' + g.earned + '/' + g.max + '</span></summary>' +
+        '<div class="tablewrap"><table><thead><tr><th>ID</th><th>Check</th><th>Result</th><th>Points</th></tr></thead><tbody>' +
+        g.checks.map(function (c) {
+          var st = CHECK[c.status];
+          return '<tr><td class="n">' + c.id + '</td><td><strong>' + esc(c.title) + '</strong><div class="muted small">' + esc(c.detail) + ' ' + src(c.source) + '</div></td>' +
+            '<td><span class="pill ' + st[1] + '">' + st[0] + '</span></td><td class="n">' + c.earned + '/' + c.points + '</td></tr>';
+        }).join('') + '</tbody></table></div></details>';
+    }).join('') + '</section>';
+
+    h += '<section class="card"><h2>Training crawlers</h2><p class="muted">These collect content for model training. Blocking them is your choice and does not change the score or your visibility in AI search.</p>' +
+      '<div class="tablewrap"><table><thead><tr><th>Bot</th><th>Operator</th><th>robots.txt</th><th>What blocking does</th></tr></thead><tbody>' +
+      r.training.map(function (t) {
+        var p = t.robots === 'allowed' ? ['Allowed', 's-idle'] : t.robots === 'disallowed' ? ['Blocked', 's-idle'] : ['Not checked', 's-idle'];
+        return '<tr><td class="n">' + t.token + '</td><td>' + t.operator + '</td><td><span class="pill ' + p[1] + '">' + p[0] + '</span></td><td class="small">' + esc(t.meaning) + ' ' + src(t.source) + '</td></tr>';
+      }).join('') + '</tbody></table></div></section>';
+
+    h += '<section class="card"><h2>Check these yourself</h2><p class="muted">These live in accounts this tool cannot see. Ticks are saved in this browser.</p><ul class="checks">' +
+      MANUAL.map(function (m) { return '<li><label for="m-' + m[0] + '"><input type="checkbox" id="m-' + m[0] + '" data-k="' + m[0] + '"><span>' + esc(m[1]) + ' <span class="small">' + src(E.SOURCES[m[2]]) + '</span></span></label></li>'; }).join('') + '</ul></section>';
+
+    var llms = r.facts.llmsTxt === 'present' ? 'This site has an llms.txt file.' : r.facts.llmsTxt === 'absent' ? 'This site has no llms.txt file.' : 'llms.txt was not checked.';
+    h += '<section class="card"><h2>Not scored, on purpose</h2><ul class="plain">' +
+      '<li><strong>llms.txt.</strong> ' + llms + ' Google says Search does not use it, so it earns no points either way. Other services may read it.</li>' +
+      '<li><strong>Chunking content.</strong> Google says there is no ideal page length. Only very long paragraphs are flagged, following Microsoft.</li>' +
+      '<li><strong>Special AI markup.</strong> None exists. Ordinary schema counts for 10 points because it must match the page.</li>' +
+      '<li><strong>Keyword variants and bought mentions.</strong> Not checked. ' + src(E.SOURCES.G2) + '</li></ul></section>';
+
+    $('report').innerHTML = h;
+    restoreChecklist();
+  }
+
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+  function restoreChecklist() {
+    Array.prototype.forEach.call(document.querySelectorAll('.checks input'), function (cb) { cb.checked = store('quotable-' + cb.dataset.k) === '1'; });
+  }
+  $('report').addEventListener('change', function (ev) {
+    if (ev.target.matches('.checks input')) store('quotable-' + ev.target.dataset.k, ev.target.checked ? '1' : '0');
+  });
+  $('report').addEventListener('click', function (ev) {
+    if (ev.target.id !== 'copy' || !lastReport) return;
+    var btn = ev.target, md = E.toMarkdown(lastReport);
+    var done = function (t) { btn.textContent = t; setTimeout(function () { btn.textContent = 'Copy report as Markdown'; }, 1800); };
+    try { navigator.clipboard.writeText(md).then(function () { done('Copied'); }, function () { done('Copy was blocked'); }); } catch (e) { done('Copy was blocked'); }
+  });
+
+  function say(text, isErr) { $('msg').innerHTML = text ? '<div class="notice' + (isErr ? ' err' : '') + '">' + esc(text) + '</div>' : ''; }
+
+  $('form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var url = $('url').value.trim();
+    if (!url) return say('Enter the address of the page you want to audit.', true);
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    try { new URL(url); } catch (e) { return say('That does not look like a web address. Try something like https://example.com/pricing', true); }
+
+    if (!live) {
+      var html = $('html').value;
+      if (!html.trim()) return say('Paste the page source to audit it here, or run the app locally for live audits.', true);
+      var robotsTxt = $('robots').value;
+      say('');
+      render(E.audit({ url: url, page: { status: null, finalUrl: url, xRobotsTag: '', body: html },
+        robots: { status: robotsTxt.trim() ? 200 : 404, body: robotsTxt }, sitemap: { status: null }, llms: { status: null }, ua: null }), false);
+      return;
+    }
+    var btn = $('run'); btn.disabled = true; btn.textContent = 'Auditing';
+    say('Fetching the page, robots.txt and testing each bot. This takes a few seconds.');
+    fetch('api/collect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
+      .then(function (res) { return res.json(); })
+      .then(function (bundle) {
+        if (bundle.error) return say(bundle.error, true);
+        say(''); render(E.audit(bundle), false);
+      })
+      .catch(function () { say('The local server did not answer. Check that server.py is still running.', true); })
+      .then(function () { btn.disabled = false; btn.textContent = 'Run audit'; });
+  });
+
+  function setMode(isLive) {
+    live = isLive;
+    $('paste').hidden = isLive;
+    $('modeNote').textContent = isLive
+      ? 'Live mode: fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks.'
+      : 'This hosted preview cannot fetch websites. Paste the page source and robots.txt below, or run the app on your computer for live audits.';
+  }
+
+  $('sources').innerHTML = Object.keys(E.SOURCES).map(function (k) { return '<li>' + src(E.SOURCES[k]) + '</li>'; }).join('');
+  setMode(false);
+  render(E.audit(SAMPLE), true);
+
+  var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  if (ctl) setTimeout(function () { ctl.abort(); }, 2500);
+  fetch('api/health', ctl ? { signal: ctl.signal } : {})
+    .then(function (res) { return res.ok ? res.json() : null; })
+    .then(function (j) { if (j && j.ok) setMode(true); })
+    .catch(function () { /* no backend: stay in paste mode */ });
+})();
+</script>
+</body>
+</html>
