@@ -23,7 +23,7 @@ Six of the ten guides were read in full and drive the automated checks, and one 
 | 2 | [Google: Succeeding in AI search](https://developers.google.com/search/blog/2025/05/succeeding-in-ai-search) and its 2026 successor, [Optimizing for generative AI features](https://developers.google.com/search/docs/fundamentals/ai-optimization-guide) | Semantic HTML, page experience, images and video, plus the list of things to ignore | Successor read in full; 2025 post via search extract |
 | 3 | [Google: SEO Starter Guide](https://developers.google.com/search/docs/fundamentals/seo-starter-guide) | Titles, descriptions, headings, alt text, sitemaps | Search extract only |
 | 4 | [Microsoft: Content for AI search answers](https://about.ads.microsoft.com/en/blog/post/october-2025/optimizing-your-content-for-inclusion-in-ai-search-answers) | Title, H1 and description alignment; descriptive headings; Q&A, lists, tables; mistakes to avoid | Yes |
-| 5 | Bing: Webmaster Guidelines | Sitemaps, IndexNow, Bing Webmaster Tools | No. Page blocked for my reader; rules taken from summaries and marked manual |
+| 5 | Bing: Webmaster Guidelines | Sitemaps, IndexNow, Bing Webmaster Tools | No. The page could not be opened; rules taken from summaries and marked manual |
 | 6 | [OpenAI: Overview of OpenAI crawlers](https://developers.openai.com/api/docs/bots) | OAI-SearchBot, ChatGPT-User, GPTBot tokens and effects | Yes |
 | 7 | [Anthropic: How Claude crawls the web](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-the-web) | Claude-SearchBot, Claude-User, ClaudeBot tokens and effects | Yes |
 | 8 | [Perplexity: Perplexity crawlers](https://docs.perplexity.ai/docs/resources/perplexity-crawlers) | PerplexityBot, Perplexity-User, firewall guidance | Yes |
@@ -179,11 +179,11 @@ The prototype is three files with no dependencies, and 29 automated tests pass a
 
 Limits to state in any demo:
 
-- **Not yet run on real websites.** My workspace cannot reach the open web, so testing used a local site built to trigger each rule. Run it on five real sites before showing it.
+- **Not yet run on real websites.** Testing used a local site built to trigger each rule. Run it on five real sites before showing it.
 - **Site-wide mode stops at 500 pages.** Larger sites are sampled across their sections.
 - **The firewall test is a hint.** Sites that verify crawler IP addresses can refuse the test request while admitting the real bot.
 - **Raw HTML only.** It does not run JavaScript, which is the point of check R1 but undercounts pages Google can still render.
-- **Thresholds are my judgement.** The guides give principles; numbers such as 150 words or 120-word paragraphs are starting values to tune.
+- **Thresholds are judgement calls.** The guides give principles; numbers such as 150 words or 120-word paragraphs are starting values to tune.
 - **The hosted preview cannot fetch sites.** It offers paste mode and an example report.
 
 ## Next steps
