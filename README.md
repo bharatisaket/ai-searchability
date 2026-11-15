@@ -14,7 +14,7 @@ Paste-only copy: https://bharatisaket.github.io/ai-searchability/
 | `engine.js` | The audit engine: one pure function that turns fetched page material into a report. |
 | `server.py` | Live-audit backend. Serves the app and fetches pages for it. |
 | `tests/test_server.py` | Server tests, run against a local test site. |
-| `docs/SPEC.md` | The spec: sources, the 26 audit rules, scoring model and limits. |
+| `docs/SPEC.md` | The spec: sources, the 29 audit rules, scoring model and limits. |
 
 ## Using it
 
@@ -30,9 +30,11 @@ python3 server.py
 
 Open http://localhost:8000 and the app switches to live mode on its own.
 
+Live mode also offers **Whole site**: it reads the sitemap, audits up to 10 pages spread across the site's sections, and groups the fixes by how many pages they affect. The crawler firewall test runs on the page you entered only.
+
 The server refuses private and local network addresses, follows at most five redirects, and only serves `index.html` and `engine.js`. To host it, run it anywhere that runs Python with `HOST=0.0.0.0` and the platform's `PORT`.
 
-Audits are rate limited: 10 per minute per visitor and 60 per minute across everyone. Change these with the `RATE_LIMIT_PER_CLIENT` and `RATE_LIMIT_GLOBAL` environment variables. Counts are kept in memory, so they reset when the server restarts.
+Audits are rate limited: 10 per minute per visitor and 60 per minute across everyone. A whole-site audit counts as three. Change these with the `RATE_LIMIT_PER_CLIENT` and `RATE_LIMIT_GLOBAL` environment variables. Counts are kept in memory, so they reset when the server restarts.
 
 ### Hosting on Render
 

@@ -10,7 +10,12 @@
  *   sitemap: { status },                  // /sitemap.xml, status null = not fetched
  *   llms:    { status },                  // /llms.txt,    status null = not fetched
  *   ua:      { browser: 200, Googlebot: 200, ... } | null
+ *   notFound:{ status },                  // a made-up URL on the site, status null = not fetched
+ *   live:    true when fetched by the server without per-bot requests (site-wide mode)
  * }
+ * page.redirects = [{ status, url }, ...] lists each redirect hop, when known.
+ *
+ * auditSite() takes { url, origin, shared: { robots, sitemap, llms, notFound }, sampled, pages: [{ url, page, ua }] }.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -28,7 +33,9 @@
     ANT: { label: 'Anthropic: How Claude crawls the web', url: 'https://support.claude.com/en/articles/8896518-does-anthropic-crawl-the-web' },
     PPLX: { label: 'Perplexity: Perplexity crawlers', url: 'https://docs.perplexity.ai/docs/resources/perplexity-crawlers' },
     LI: { label: 'LinkedIn: Unlocking AI Visibility', url: 'https://business.linkedin.com/advertise/resources/unlocking-ai-visibility' },
-    HUB: { label: 'ChatGPT Business Hub', url: 'https://chatgpt.com/business-hub' }
+    HUB: { label: 'ChatGPT Business Hub', url: 'https://chatgpt.com/business-hub' },
+    G4: { label: 'Google: HTTP status codes and soft 404 errors', url: 'https://developers.google.com/search/docs/crawling-indexing/http-network-errors' },
+    G5: { label: 'Google: Redirects and Google Search', url: 'https://developers.google.com/search/docs/crawling-indexing/301-redirects' }
   };
 
   var ENGINES = [
@@ -163,6 +170,11 @@
     var scriptCount = q('script').length;
     var dataNosnippet = q('[data-nosnippet]').length;
     var anchorHrefs = q('a[href]').map(function (el) { return el.getAttribute('href'); });
+    var metaRefresh = q('meta[http-equiv="refresh" i]').map(function (m) { return m.getAttribute('content') || ''; })
+      .filter(function (c) { return /url\s*=/i.test(c); });
+    var jsRedirect = /\blocation(\.href)?\s*=[^=]|\blocation\.(replace|assign)\s*\(/.test(
+      q('script:not([src])').map(function (el) { return el.textContent; }).join('\n'));
+    var passwordFields = q('input[type="password" i]').length;
 
     q('script, style, noscript, template, svg, iframe').forEach(function (el) { el.remove(); });
 
@@ -233,6 +245,9 @@
     // ---------- scored checks ----------
     var noindex = /\bnoindex\b|\bnone\b/.test(directives);
     var nosnippet = /\bnosnippet\b|max-snippet\s*:\s*0\b/.test(directives);
+    var snippetCap = (directives.match(/max-snippet\s*:\s*(\d+)/g) || [])
+      .map(function (m) { return +m.replace(/\D+/g, ''); })
+      .filter(function (n) { return n > 0 && n < 50; }).sort(function (a, b) { return a - b; })[0];
     var statusKnown = page.status !== null && page.status !== undefined;
 
     function check(id, title, points, status, detail, fix, source) {
@@ -248,10 +263,11 @@
       check('I2', 'Page allows indexing', 8, noindex ? 'fail' : 'pass',
         noindex ? 'A noindex directive is set (' + norm(directives.replace(/^, |, $/g, '')) + ').' : 'No noindex directive found.',
         'Remove noindex from the robots meta tag and the X-Robots-Tag header if you want this page in search and AI answers.', 'G1'),
-      check('I3', 'Snippets are allowed', 5, nosnippet ? 'fail' : 'pass',
+      check('I3', 'Snippets are allowed', 5, nosnippet ? 'fail' : snippetCap ? 'warn' : 'pass',
         nosnippet ? 'nosnippet or max-snippet:0 is set. Google keeps such pages out of AI Overviews and AI Mode.'
+          : snippetCap ? 'max-snippet:' + snippetCap + ' limits previews to ' + snippetCap + ' characters, too short to quote a full sentence.'
           : 'No snippet restriction found.' + (dataNosnippet ? ' ' + dataNosnippet + ' element(s) use data-nosnippet and are excluded from previews.' : ''),
-        'Remove nosnippet and max-snippet:0 unless you mean to opt out of AI answers on Google.', 'G1'),
+        'Remove nosnippet and max-snippet:0, and raise small max-snippet limits, unless you mean to opt out of AI answers on Google.', 'G1'),
       (function () {
         var c = canonical ? normUrl(new URL(canonical, pageUrl).href) : null, me = normUrl(pageUrl);
         var other = c && me && c !== me;
@@ -347,7 +363,35 @@
         'Link to related pages on your site with descriptive link text, so crawlers can find them.', 'G1')
     ];
 
+    // ---------- access checks (not scored) ----------
+    var nf = bundle.notFound ? bundle.notFound.status : null;
+    var nfKnown = nf !== null && nf !== undefined;
+    var hops = Array.isArray(page.redirects) ? page.redirects : null;
+    var chain = hops ? hops.map(function (h) { return h.status; }).join(', ') : '';
+    var clientRedirect = metaRefresh.length ? 'a meta refresh tag' : (jsRedirect && wordCount < 50) ? 'JavaScript' : '';
+    var LOGIN = /(^|\/)(log-?in|sign-?in|signin|sso|auth|authenticate|account\/login|users\/sign_in)(\/|$|\.)/i;
+    var askedPath = ''; try { askedPath = new URL(bundle.url).pathname; } catch (e) { /* keep empty */ }
+    var sentToLogin = u && hops && hops.length && LOGIN.test(u.pathname) && !LOGIN.test(askedPath);
+    var signIn = statusKnown && (page.status === 401 || page.status === 403) ? 'The page returned ' + page.status + ' to a visitor who is not signed in.'
+      : sentToLogin ? 'The page redirects to a sign-in page: ' + pageUrl
+      : passwordFields && wordCount < 150 ? 'The page shows a password field and only ' + wordCount + ' words of text.' : '';
+    var A = [
+      check('A5', 'Missing pages return 404', 0, !nfKnown ? 'na' : nf === 404 || nf === 410 ? 'pass' : nf === 200 ? 'fail' : 'warn',
+        !nfKnown ? 'Not checked in paste mode.' : nf === 200 ? 'A made-up address on this site returned 200. Crawlers will treat error pages as real content.'
+          : 'A made-up address on this site returned ' + nf + '.',
+        'Return a 404 status for pages that do not exist, instead of a 200 page or a redirect to the home page.', 'G4'),
+      check('A6', 'Redirects are short and server-side', 0, clientRedirect || (hops && hops.length > 2) ? 'fail' : hops ? 'pass' : 'na',
+        clientRedirect ? 'The page redirects using ' + clientRedirect + ', which many crawlers do not follow.'
+          : !hops ? 'Redirect chain not checked in paste mode.' : !hops.length ? 'The page loads without redirects.'
+          : hops.length + ' redirect(s) before the page loads (' + chain + ').',
+        'Redirect on the server with a single 301 or 308, straight to the final address.', 'G5'),
+      check('A7', 'Content is readable without signing in', 0, signIn ? 'fail' : 'pass',
+        signIn || 'No sign-in wall found.',
+        'Keep pages you want quoted readable without an account. Crawlers cannot sign in.', 'G1')
+    ];
+
     var groups = [
+      { id: 'A', name: 'Access', checks: A, unscored: true },
       { id: 'I', name: 'Indexability', checks: I },
       { id: 'R', name: 'Readable content', checks: R },
       { id: 'S', name: 'Answer structure', checks: S },
@@ -368,7 +412,8 @@
       var ib = botState(e.index), ub = e.user ? botState(e.user) : null;
       var softUser = e.id === 'chatgpt' || e.id === 'perplexity'; // user-fetch bots that may bypass robots.txt
       var state, reason;
-      if (ib.robots === 'disallowed') { state = 'blocked'; reason = 'robots.txt blocks ' + e.index + (ib.rule ? ' (' + ib.rule + ' in the ' + ib.group + ' group).' : '.'); }
+      if (signIn && ib.robots !== 'disallowed') { state = 'signin'; reason = signIn + ' Crawlers cannot sign in.'; }
+      else if (ib.robots === 'disallowed') { state = 'blocked'; reason = 'robots.txt blocks ' + e.index + (ib.rule ? ' (' + ib.rule + ' in the ' + ib.group + ' group).' : '.'); }
       else if ((e.id === 'google' || e.id === 'bing') && (noindex || pageDown)) { state = 'restricted'; reason = noindex ? 'The page is set to noindex.' : 'The page returned ' + page.status + '.'; }
       else if (e.id === 'google' && nosnippet) { state = 'restricted'; reason = 'Snippets are switched off, which keeps the page out of AI answers.'; }
       else if (ib.uaBlocked) { state = 'firewall'; reason = 'A request identifying as ' + e.index + ' got ' + ib.uaStatus + ' while a browser got 200. Check your firewall or CDN bot rules.'; }
@@ -403,7 +448,8 @@
     groups.forEach(function (g) {
       g.checks.forEach(function (c) {
         if (c.status === 'fail' || c.status === 'warn') {
-          fixes.push({ level: (c.id === 'I1' || c.id === 'I2') && c.status === 'fail' ? 'blocker' : c.status === 'fail' ? 'fix' : 'improve',
+          fixes.push({ level: (c.id === 'I1' || c.id === 'I2' || c.id === 'A7') && c.status === 'fail' ? 'blocker'
+            : c.status !== 'fail' ? 'improve' : g.unscored ? 'warning' : 'fix',
             id: c.id, title: c.title, detail: c.detail, fix: c.fix, lost: c.points - c.earned, source: c.source });
         }
       });
@@ -414,7 +460,7 @@
     var llmsStatus = bundle.llms ? bundle.llms.status : null;
     return {
       url: pageUrl,
-      mode: ua ? 'live' : 'paste',
+      mode: ua || bundle.live ? 'live' : 'paste',
       score: score,
       band: score >= 85 ? 'strong' : score >= 65 ? 'fair' : 'weak',
       engines: engines,
@@ -438,9 +484,83 @@
     r.fixes.forEach(function (f, i) { lines.push((i + 1) + '. **' + f.title + '** (' + f.level + '). ' + f.detail + ' ' + f.fix + ' Source: ' + f.source.label); });
     if (r.robotsSnippet) lines.push('', '```', r.robotsSnippet, '```');
     lines.push('', '## Scores by group', '');
-    r.groups.forEach(function (g) { lines.push('- ' + g.name + ': ' + g.earned + '/' + g.max); });
+    r.groups.forEach(function (g) {
+      if (!g.unscored) return lines.push('- ' + g.name + ': ' + g.earned + '/' + g.max);
+      var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
+      lines.push('- ' + g.name + ' (not scored): ' + (bad ? bad + ' issue(s)' : 'no issues'));
+    });
     return lines.join('\n');
   }
 
-  return { audit: audit, parseRobots: parseRobots, isAllowed: isAllowed, toMarkdown: toMarkdown, SOURCES: SOURCES, ENGINES: ENGINES, TRAINING: TRAINING };
+  // ---------- site-wide audit ----------
+
+  var STATE_RANK = ['blocked', 'signin', 'firewall', 'restricted', 'partial', 'unknown', 'open'];
+  var SITE_WIDE = ['A5', 'D1'];
+
+  function auditSite(site, parse) {
+    var shared = site.shared || {};
+    var pages = (site.pages || []).map(function (p) {
+      var report = audit({ url: p.url, page: p.page, ua: p.ua || null, live: true,
+        robots: shared.robots, sitemap: shared.sitemap, llms: shared.llms, notFound: shared.notFound }, parse);
+      return { url: p.url || report.url, finalUrl: report.url, score: report.score, band: report.band, issues: report.fixes.length, report: report };
+    });
+    var total = pages.length;
+    var score = total ? Math.round(pages.reduce(function (n, p) { return n + p.score; }, 0) / total) : 0;
+
+    var engines = ENGINES.map(function (e) {
+      var per = pages.map(function (p) { return { url: p.url, e: p.report.engines.filter(function (x) { return x.id === e.id; })[0] }; });
+      var open = per.filter(function (x) { return x.e.state === 'open'; }).length;
+      var worst = per.slice().sort(function (a, b) { return STATE_RANK.indexOf(a.e.state) - STATE_RANK.indexOf(b.e.state); })[0];
+      var affected = worst ? per.filter(function (x) { return x.e.state === worst.e.state; }).length : 0;
+      return { id: e.id, name: e.name, state: worst ? worst.e.state : 'unknown', open: open, total: total, note: e.note || '',
+        reason: !worst ? 'No pages were audited.' : open === total ? 'Open on all ' + total + ' pages audited.'
+          : affected + ' of ' + total + ' pages affected. For example ' + worst.url + ': ' + worst.e.reason,
+        source: SOURCES[e.source] };
+    });
+
+    var byKey = {}, fixes = [], order = { blocker: 0, warning: 1, fix: 2, improve: 3 }, tokens = [];
+    pages.forEach(function (p) {
+      p.report.fixes.forEach(function (f) {
+        var key = f.id || f.title, item = byKey[key];
+        if (!item) {
+          item = byKey[key] = { id: f.id, level: f.level, title: f.title.replace(' this page', ' some pages'), detail: f.detail, fix: f.fix,
+            source: f.source, lost: 0, pages: [], siteWide: SITE_WIDE.indexOf(f.id) >= 0 || /^robots\.txt returns/.test(f.title) };
+          fixes.push(item);
+        }
+        if (order[f.level] < order[item.level]) item.level = f.level;
+        item.lost += f.lost || 0;
+        item.pages.push(p.url);
+      });
+      (p.report.robotsSnippet.match(/User-agent: (\S+)/g) || []).forEach(function (m) {
+        var t = m.replace('User-agent: ', ''); if (tokens.indexOf(t) < 0) tokens.push(t);
+      });
+    });
+    var reach = function (f) { return f.siteWide ? total : f.pages.length; };
+    fixes.sort(function (a, b) { return order[a.level] - order[b.level] || reach(b) - reach(a) || b.lost - a.lost; });
+
+    var first = pages[0] ? pages[0].report : null;
+    return {
+      mode: 'site', url: site.origin || site.url, score: score, band: score >= 85 ? 'strong' : score >= 65 ? 'fair' : 'weak',
+      pages: pages, engines: engines, fixes: fixes, sampled: site.sampled || {}, errors: site.errors || [],
+      robotsSnippet: tokens.map(function (t) { return 'User-agent: ' + t + '\nAllow: /'; }).join('\n\n'),
+      training: first ? first.training : [], facts: first ? first.facts : {}
+    };
+  }
+
+  function siteToMarkdown(r) {
+    var lines = ['# AI searchability audit: whole site', '', r.url, '',
+      '**Average page score: ' + r.score + '/100 (' + r.band + ') across ' + r.pages.length + ' pages**', '', '## Engine access', ''];
+    r.engines.forEach(function (e) { lines.push('- **' + e.name + '**: ' + e.state + '. ' + e.reason); });
+    lines.push('', '## Fix list', '');
+    if (!r.fixes.length) lines.push('Nothing to fix.');
+    r.fixes.forEach(function (f, i) {
+      lines.push((i + 1) + '. **' + f.title + '** (' + f.level + ', ' + (f.siteWide ? 'whole site' : f.pages.length + ' of ' + r.pages.length + ' pages') + '). ' + f.fix + ' Source: ' + f.source.label);
+    });
+    if (r.robotsSnippet) lines.push('', '```', r.robotsSnippet, '```');
+    lines.push('', '## Pages', '');
+    r.pages.forEach(function (p) { lines.push('- ' + p.score + '/100 ' + p.url + ' (' + p.issues + ' issues)'); });
+    return lines.join('\n');
+  }
+
+  return { audit: audit, auditSite: auditSite, siteToMarkdown: siteToMarkdown, parseRobots: parseRobots, isAllowed: isAllowed, toMarkdown: toMarkdown, SOURCES: SOURCES, ENGINES: ENGINES, TRAINING: TRAINING };
 });

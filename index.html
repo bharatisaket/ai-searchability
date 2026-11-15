@@ -117,6 +117,16 @@ td.n { font-family: var(--mono); font-size: 13px; white-space: nowrap; font-vari
 ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 footer { color: var(--muted); font-size: 13.5px; }
 footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.scope { border: 0; padding: 0; margin: 0; display: flex; gap: 6px 20px; flex-wrap: wrap; }
+.scope label { font-weight: 400; font-size: 15px; display: flex; gap: 7px; align-items: center; }
+.scope input { accent-color: var(--accent); }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; text-align: left; overflow-wrap: anywhere; }
+.fix details summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
+.fix details ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; overflow-wrap: anywhere; }
+#detail { display: flex; flex-direction: column; gap: 22px; }
+#detail:empty { display: none; }
+#report { display: flex; flex-direction: column; gap: 22px; }
 @media (max-width: 640px) {
   .summary, .two { grid-template-columns: 1fr; }
   details.group summary { grid-template-columns: 1fr 70px 56px; }
@@ -140,6 +150,11 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
         <input class="grow" id="url" type="url" inputmode="url" placeholder="https://example.com/pricing" autocomplete="url">
         <button class="primary" id="run" type="submit">Run audit</button>
       </div>
+      <fieldset id="scope" class="scope" hidden>
+        <legend class="sr">What to audit</legend>
+        <label><input type="radio" name="scope" value="page" checked> This page</label>
+        <label><input type="radio" name="scope" value="site"> Whole site (up to 10 pages)</label>
+      </fieldset>
       <div id="modeNote" class="small muted"></div>
       <div id="paste" hidden>
         <div class="two">
@@ -171,14 +186,15 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
   'use strict';
   var E = window.AuditEngine;
   var $ = function (id) { return document.getElementById(id); };
-  var live = false, lastReport = null;
+  var live = false;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function src(s) { return s ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + '</a>' : ''; }
 
   var STATE = {
     open: ['Open', 's-good'], partial: ['Partly open', 's-warn'], blocked: ['Blocked', 's-bad'],
-    firewall: ['Check firewall', 's-bad'], restricted: ['Opted out', 's-bad'], unknown: ['Not checked', 's-idle']
+    firewall: ['Check firewall', 's-bad'], restricted: ['Opted out', 's-bad'], signin: ['Sign-in required', 's-bad'],
+    unknown: ['Not checked', 's-idle']
   };
   var CHECK = { pass: ['Pass', 's-good'], warn: ['Partial', 's-warn'], fail: ['Fail', 's-bad'], na: ['N/A', 's-idle'] };
   var LEVEL = { blocker: ['Blocker', 's-bad'], warning: ['Access', 's-warn'], fix: ['Fix', 's-warn'], improve: ['Improve', 's-idle'] };
@@ -193,7 +209,7 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
   // A made-up page with common mistakes, run through the real engine.
   var SAMPLE = {
     url: 'https://harborandpine.example/brew-guides/pour-over',
-    page: { status: 200, finalUrl: 'https://harborandpine.example/brew-guides/pour-over', xRobotsTag: '', body:
+    page: { status: 200, finalUrl: 'https://harborandpine.example/brew-guides/pour-over', xRobotsTag: '', redirects: [], body:
       '<html><head><title>Home</title><link rel="canonical" href="https://harborandpine.example/brew-guides/pour-over"></head><body>' +
       '<nav><a href="/">Home</a><a href="/shop">Shop</a><a href="/brew-guides">Brew guides</a><a href="/about">About</a></nav>' +
       '<div class="page"><h1>Pour-over coffee guide</h1><h1>Harbor &amp; Pine Roasters</h1>' +
@@ -204,81 +220,145 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
       '<p>' + new Array(14).join('If the cup tastes sour, grind finer; if it tastes bitter, grind coarser and pour a little faster. ') + '</p>' +
       '</div><footer><a href="/contact">Contact</a></footer></body></html>' },
     robots: { status: 200, body: 'User-agent: *\nDisallow: /cart/\n\n# keep AI out of our content\nUser-agent: GPTBot\nUser-agent: OAI-SearchBot\nUser-agent: ClaudeBot\nDisallow: /\n' },
-    sitemap: { status: 404 }, llms: { status: 404 },
+    sitemap: { status: 404 }, llms: { status: 404 }, notFound: { status: 200 },
     ua: { browser: 200, Googlebot: 200, Bingbot: 200, 'OAI-SearchBot': 200, 'ChatGPT-User': 200, 'Claude-SearchBot': 200, 'Claude-User': 200, PerplexityBot: 403, 'Perplexity-User': 200 }
   };
 
-  function dial(score, band) {
+  var shown = { page: null, site: null, detail: null };
+
+  function dial(score, band, label) {
     var r = 62, c = 2 * Math.PI * r, off = c * (1 - score / 100);
     var color = band === 'strong' ? 'var(--good)' : band === 'fair' ? 'var(--warn)' : 'var(--bad)';
-    var label = band === 'strong' ? 'Strong' : band === 'fair' ? 'Fair' : 'Needs work';
-    return '<div class="dial"><svg viewBox="0 0 150 150" role="img" aria-label="Page score ' + score + ' out of 100">' +
+    var word = band === 'strong' ? 'Strong' : band === 'fair' ? 'Fair' : 'Needs work';
+    return '<div class="dial"><svg viewBox="0 0 150 150" role="img" aria-label="' + label + ' ' + score + ' out of 100">' +
       '<circle cx="75" cy="75" r="' + r + '" fill="none" stroke="var(--idle-bg)" stroke-width="11"/>' +
       '<circle class="arc" cx="75" cy="75" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 75 75)"/>' +
-      '<text class="num" x="75" y="84" text-anchor="middle">' + score + '</text><text class="of" x="75" y="104" text-anchor="middle">page score / 100</text></svg>' +
-      '<span class="pill ' + (band === 'strong' ? 's-good' : band === 'fair' ? 's-warn' : 's-bad') + '">' + label + '</span></div>';
+      '<text class="num" x="75" y="84" text-anchor="middle">' + score + '</text><text class="of" x="75" y="104" text-anchor="middle">' + label + ' / 100</text></svg>' +
+      '<span class="pill ' + (band === 'strong' ? 's-good' : band === 'fair' ? 's-warn' : 's-bad') + '">' + word + '</span></div>';
   }
 
-  function render(r, isSample) {
-    lastReport = r;
-    var h = '';
-    if (isSample) h += '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes, so you can see what an audit returns. Run your own above.</div>';
+  function engineRows(engines, showNote) {
+    return '<div class="engines">' + engines.map(function (e) {
+      var st = STATE[e.state];
+      return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + st[1] + '">' + st[0] + '</span><span class="why">' +
+        esc(e.reason) + (showNote && e.note && e.state !== 'open' ? ' ' + esc(e.note) : '') + '</span></div>';
+    }).join('') + '</div>';
+  }
 
+  function snippetHtml(snippet) {
+    return snippet ? '<h3>Add to robots.txt</h3><pre>' + esc(snippet) + '</pre>' +
+      '<p class="small muted">A bot that has its own group ignores the <code>*</code> group, so copy across any Disallow lines you still want to apply to it. Remove the bot from any group that disallows it.</p>' : '';
+  }
+
+  function summaryCard(r, src, heading) {
     var open = r.engines.filter(function (e) { return e.state === 'open'; }).length;
-    h += '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
-      '<button id="copy" type="button">Copy report as Markdown</button></div>' +
-      '<div class="summary">' + dial(r.score, r.band) + '<div><p class="small muted" style="margin-bottom:8px">' + open + ' of ' + r.engines.length + ' engines can fully reach this page</p><div class="engines">' +
-      r.engines.map(function (e) {
-        var st = STATE[e.state];
-        return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + st[1] + '">' + st[0] + '</span><span class="why">' + esc(e.reason) + (e.note && e.state !== 'open' ? ' ' + esc(e.note) : '') + '</span></div>';
-      }).join('') + '</div></div></div>' +
-      (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test and sitemap lookup need the local app.</p>' : '') +
+    return '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>' + heading + '</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
+      '<button class="copy" data-src="' + src + '" type="button">Copy report as Markdown</button></div>' +
+      '<div class="summary">' + dial(r.score, r.band, 'page score') + '<div><p class="small muted" style="margin-bottom:8px">' + open + ' of ' + r.engines.length + ' engines can fully reach this page</p>' +
+      engineRows(r.engines, true) + '</div></div>' +
+      (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode.</p>' : '') +
       '</section>';
+  }
 
-    h += '<section class="card"><h2>Fix list</h2>';
-    if (!r.fixes.length) h += '<p>Nothing to fix. Every engine can reach this page and every check passed.</p>';
-    else {
-      h += '<p class="muted small">Access problems first, then checks by points lost.</p><ol class="fixes">' + r.fixes.map(function (f) {
-        var lv = LEVEL[f.level];
-        return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
-          (f.lost ? '<span class="small muted mono">-' + f.lost + ' pts</span>' : '') + '</div>' +
-          '<div class="muted small">' + esc(f.detail) + '</div><div class="do">' + esc(f.fix) + '</div><div class="small">' + src(f.source) + '</div></li>';
-      }).join('') + '</ol>';
-      if (r.robotsSnippet) h += '<h3>Add to robots.txt</h3><pre id="snippet">' + esc(r.robotsSnippet) + '</pre>' +
-        '<p class="small muted">A bot that has its own group ignores the <code>*</code> group, so copy across any Disallow lines you still want to apply to it. Remove the bot from any group that disallows it.</p>';
-    }
-    h += '</section>';
+  function fixCard(r) {
+    var h = '<section class="card"><h2>Fix list</h2>';
+    if (!r.fixes.length) return h + '<p>Nothing to fix. Every engine can reach this page and every check passed.</p></section>';
+    h += '<p class="muted small">Access problems first, then checks by points lost.</p><ol class="fixes">' + r.fixes.map(function (f) {
+      var lv = LEVEL[f.level];
+      return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
+        (f.lost ? '<span class="small muted mono">-' + f.lost + ' pts</span>' : '') + '</div>' +
+        '<div class="muted small">' + esc(f.detail) + '</div><div class="do">' + esc(f.fix) + '</div><div class="small">' + src(f.source) + '</div></li>';
+    }).join('') + '</ol>';
+    return h + snippetHtml(r.robotsSnippet) + '</section>';
+  }
 
-    h += '<section class="card"><h2>Checks</h2>' + r.groups.map(function (g, i) {
-      return '<details class="group"' + (g.earned < g.max ? ' open' : '') + '><summary><span class="gname"><strong>' + esc(g.name) + '</strong></span>' +
-        '<span class="bar"><i style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="pts">' + g.earned + '/' + g.max + '</span></summary>' +
+  function checksCard(r) {
+    return '<section class="card"><h2>Checks</h2>' + r.groups.map(function (g) {
+      var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
+      return '<details class="group"' + ((g.unscored ? bad : g.earned < g.max) ? ' open' : '') + '><summary><span class="gname"><strong>' + esc(g.name) + '</strong></span>' +
+        (g.unscored ? '<span class="small muted">not scored</span><span class="pts">' + (bad ? bad + ' issue' + (bad > 1 ? 's' : '') : 'ok') + '</span>'
+          : '<span class="bar"><i style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="pts">' + g.earned + '/' + g.max + '</span>') + '</summary>' +
         '<div class="tablewrap"><table><thead><tr><th>ID</th><th>Check</th><th>Result</th><th>Points</th></tr></thead><tbody>' +
         g.checks.map(function (c) {
           var st = CHECK[c.status];
           return '<tr><td class="n">' + c.id + '</td><td><strong>' + esc(c.title) + '</strong><div class="muted small">' + esc(c.detail) + ' ' + src(c.source) + '</div></td>' +
-            '<td><span class="pill ' + st[1] + '">' + st[0] + '</span></td><td class="n">' + c.earned + '/' + c.points + '</td></tr>';
+            '<td><span class="pill ' + st[1] + '">' + st[0] + '</span></td><td class="n">' + (c.points ? c.earned + '/' + c.points : '&ndash;') + '</td></tr>';
         }).join('') + '</tbody></table></div></details>';
     }).join('') + '</section>';
+  }
 
-    h += '<section class="card"><h2>Training crawlers</h2><p class="muted">These collect content for model training. Blocking them is your choice and does not change the score or your visibility in AI search.</p>' +
+  function siteWideCards(r) {
+    var h = '<section class="card"><h2>Training crawlers</h2><p class="muted">These collect content for model training. Blocking them is your choice and does not change the score or your visibility in AI search.</p>' +
       '<div class="tablewrap"><table><thead><tr><th>Bot</th><th>Operator</th><th>robots.txt</th><th>What blocking does</th></tr></thead><tbody>' +
       r.training.map(function (t) {
-        var p = t.robots === 'allowed' ? ['Allowed', 's-idle'] : t.robots === 'disallowed' ? ['Blocked', 's-idle'] : ['Not checked', 's-idle'];
-        return '<tr><td class="n">' + t.token + '</td><td>' + t.operator + '</td><td><span class="pill ' + p[1] + '">' + p[0] + '</span></td><td class="small">' + esc(t.meaning) + ' ' + src(t.source) + '</td></tr>';
+        var p = t.robots === 'allowed' ? 'Allowed' : t.robots === 'disallowed' ? 'Blocked' : 'Not checked';
+        return '<tr><td class="n">' + t.token + '</td><td>' + t.operator + '</td><td><span class="pill s-idle">' + p + '</span></td><td class="small">' + esc(t.meaning) + ' ' + src(t.source) + '</td></tr>';
       }).join('') + '</tbody></table></div></section>';
 
     h += '<section class="card"><h2>Check these yourself</h2><p class="muted">These live in accounts this tool cannot see. Ticks are saved in this browser.</p><ul class="checks">' +
       MANUAL.map(function (m) { return '<li><label for="m-' + m[0] + '"><input type="checkbox" id="m-' + m[0] + '" data-k="' + m[0] + '"><span>' + esc(m[1]) + ' <span class="small">' + src(E.SOURCES[m[2]]) + '</span></span></label></li>'; }).join('') + '</ul></section>';
 
     var llms = r.facts.llmsTxt === 'present' ? 'This site has an llms.txt file.' : r.facts.llmsTxt === 'absent' ? 'This site has no llms.txt file.' : 'llms.txt was not checked.';
-    h += '<section class="card"><h2>Not scored, on purpose</h2><ul class="plain">' +
+    return h + '<section class="card"><h2>Not scored, on purpose</h2><ul class="plain">' +
       '<li><strong>llms.txt.</strong> ' + llms + ' Google says Search does not use it, so it earns no points either way. Other services may read it.</li>' +
       '<li><strong>Chunking content.</strong> Google says there is no ideal page length. Only very long paragraphs are flagged, following Microsoft.</li>' +
       '<li><strong>Special AI markup.</strong> None exists. Ordinary schema counts for 10 points because it must match the page.</li>' +
       '<li><strong>Keyword variants and bought mentions.</strong> Not checked. ' + src(E.SOURCES.G2) + '</li></ul></section>';
+  }
 
-    $('report').innerHTML = h;
+  function render(r, isSample) {
+    shown = { page: r, site: null, detail: null };
+    $('report').innerHTML =
+      (isSample ? '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes, so you can see what an audit returns. Run your own above.</div>' : '') +
+      summaryCard(r, 'page', 'Summary') + fixCard(r) + checksCard(r) + siteWideCards(r);
     restoreChecklist();
+  }
+
+  function renderSite(r) {
+    shown = { page: null, site: r, detail: null };
+    var n = r.pages.length, sm = r.sampled;
+    var how = n <= 1 ? 'No other pages were found in a sitemap or in the links on that page.'
+      : sm.source === 'sitemap' ? 'The page you entered and ' + (n - 1) + ' chosen from the sitemap, which lists ' + sm.listed + ' addresses. Pages are spread across the site\'s sections; legal pages and translations are skipped.'
+      : 'The page you entered and ' + (n - 1) + ' chosen from the links on it, because no sitemap was found.';
+    var allOpen = r.engines.filter(function (e) { return e.state === 'open'; }).length;
+    var h = '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Site summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
+      '<button class="copy" data-src="site" type="button">Copy report as Markdown</button></div>' +
+      '<div class="summary">' + dial(r.score, r.band, 'average score') + '<div><p class="small muted" style="margin-bottom:8px">' + allOpen + ' of ' + r.engines.length + ' engines can fully reach every page audited</p>' +
+      engineRows(r.engines, false) + '</div></div>' +
+      '<p class="small muted"><strong>' + n + ' page' + (n === 1 ? '' : 's') + ' audited.</strong> ' + how +
+      (r.errors.length ? ' ' + r.errors.length + ' page(s) could not be fetched.' : '') + ' The firewall test ran on the page you entered only.</p></section>';
+
+    h += '<section class="card"><h2>Fix list for the site</h2>';
+    if (!r.fixes.length) h += '<p>Nothing to fix on the pages audited.</p>';
+    else {
+      h += '<p class="muted small">Access problems first, then the fixes that affect the most pages.</p><ol class="fixes">' + r.fixes.map(function (f) {
+        var lv = LEVEL[f.level];
+        return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
+          '<span class="pill s-idle">' + (f.siteWide ? 'Whole site' : f.pages.length + ' of ' + n + ' pages') + '</span></div>' +
+          (f.siteWide ? '<div class="muted small">' + esc(f.detail) + '</div>' : '') +
+          '<div class="do">' + esc(f.fix) + '</div><div class="small">' + src(f.source) + '</div>' +
+          (f.siteWide ? '' : '<details><summary>Pages affected</summary><ul>' + f.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>') + '</li>';
+      }).join('') + '</ol>' + snippetHtml(r.robotsSnippet);
+    }
+    h += '</section>';
+
+    h += '<section class="card"><h2>Pages</h2><p class="muted small">Choose a page to see its full report.</p>' +
+      '<div class="tablewrap"><table><thead><tr><th>Page</th><th>Score</th><th>Rating</th><th>Issues</th></tr></thead><tbody>' +
+      r.pages.map(function (p, i) {
+        var pill = p.band === 'strong' ? ['Strong', 's-good'] : p.band === 'fair' ? ['Fair', 's-warn'] : ['Needs work', 's-bad'];
+        return '<tr><td><button class="link" type="button" data-page="' + i + '">' + esc(p.url) + '</button></td><td class="n">' + p.score + '</td>' +
+          '<td><span class="pill ' + pill[1] + '">' + pill[0] + '</span></td><td class="n">' + p.issues + '</td></tr>';
+      }).join('') + '</tbody></table></div></section>';
+
+    $('report').innerHTML = h + '<div id="detail"></div>' + siteWideCards(r);
+    restoreChecklist();
+  }
+
+  function showDetail(i) {
+    var r = shown.site.pages[i].report;
+    shown.detail = r;
+    $('detail').innerHTML = summaryCard(r, 'detail', 'Page report') + fixCard(r) + checksCard(r);
+    $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
@@ -289,8 +369,10 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
     if (ev.target.matches('.checks input')) store('quotable-' + ev.target.dataset.k, ev.target.checked ? '1' : '0');
   });
   $('report').addEventListener('click', function (ev) {
-    if (ev.target.id !== 'copy' || !lastReport) return;
-    var btn = ev.target, md = E.toMarkdown(lastReport);
+    if (ev.target.dataset.page !== undefined) return showDetail(+ev.target.dataset.page);
+    if (!ev.target.classList.contains('copy')) return;
+    var btn = ev.target, which = btn.dataset.src;
+    var md = which === 'site' ? E.siteToMarkdown(shown.site) : E.toMarkdown(shown[which]);
     var done = function (t) { btn.textContent = t; setTimeout(function () { btn.textContent = 'Copy report as Markdown'; }, 1800); };
     try { navigator.clipboard.writeText(md).then(function () { done('Copied'); }, function () { done('Copy was blocked'); }); } catch (e) { done('Copy was blocked'); }
   });
@@ -313,13 +395,16 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
         robots: { status: robotsTxt.trim() ? 200 : 404, body: robotsTxt }, sitemap: { status: null }, llms: { status: null }, ua: null }), false);
       return;
     }
+    var site = document.querySelector('input[name="scope"]:checked').value === 'site';
     var btn = $('run'); btn.disabled = true; btn.textContent = 'Auditing';
-    say('Fetching the page, robots.txt and testing each bot. This takes a few seconds.');
-    fetch('api/collect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
+    say(site ? 'Reading the sitemap and fetching up to 10 pages. This can take up to a minute.'
+      : 'Fetching the page, robots.txt and testing each bot. This takes a few seconds.');
+    fetch(site ? 'api/collect-site' : 'api/collect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
       .then(function (res) { return res.json(); })
       .then(function (bundle) {
         if (bundle.error) return say(bundle.error, true);
-        say(''); render(E.audit(bundle), false);
+        say('');
+        if (site) renderSite(E.auditSite(bundle)); else render(E.audit(bundle), false);
       })
       .catch(function () { say('The local server did not answer. Check that server.py is still running.', true); })
       .then(function () { btn.disabled = false; btn.textContent = 'Run audit'; });
@@ -328,8 +413,9 @@ footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
   function setMode(isLive) {
     live = isLive;
     $('paste').hidden = isLive;
+    $('scope').hidden = !isLive;
     $('modeNote').textContent = isLive
-      ? 'Live mode: fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks.'
+      ? 'Live mode: fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks. Whole site audits a sample of pages from your sitemap.'
       : 'This hosted preview cannot fetch websites. Paste the page source and robots.txt below, or run the app on your computer for live audits.';
   }
 

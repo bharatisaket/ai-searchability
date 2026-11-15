@@ -34,7 +34,7 @@ If you can share the LinkedIn PDF and the Bing page text, their rules can move f
 
 ## Audit rules
 
-The audit runs 26 automated checks in six groups. Access checks set each engine's status. The other five groups add up to the 100-point page score.
+The audit runs 29 automated checks in six groups. Access checks set each engine's status. The other five groups add up to the 100-point page score.
 
 ### Access (per engine, not scored)
 
@@ -44,6 +44,11 @@ The audit runs 26 automated checks in six groups. Access checks set each engine'
 | A2 | Each search and retrieval bot may fetch this URL under robots.txt: Googlebot, Bingbot, OAI-SearchBot, ChatGPT-User, Claude-SearchBot, Claude-User, PerplexityBot | Guides 1, 5, 6, 7, 8 |
 | A3 | The page answers each bot's user-agent with the same status a browser gets. A 401, 403 or 429 for the bot alone means a firewall or CDN block | Google 1 (CDN and hosting), Perplexity 8 (WAF) |
 | A4 | Training bots are reported as the owner's choice, never as a fault: GPTBot, ClaudeBot, Google-Extended | Guides 1, 6, 7 |
+| A5 | A made-up address on the site returns 404 or 410. A 200 means error pages look like real content (a soft 404) | Google: HTTP status codes and soft 404 errors |
+| A6 | The page loads after at most two server-side redirects, with no meta refresh or JavaScript redirect | Google: Redirects and Google Search |
+| A7 | The page is readable without signing in: no 401 or 403, no redirect to a sign-in page, no password field in place of content | Google 1 |
+
+A5 to A7 appear in the Checks list as an unscored Access group. A failed A7 is a blocker and sets every engine to Sign-in required. Failed A5 and A6 rank in the fix list above the scored checks.
 
 ### Indexability (25 points)
 
@@ -51,7 +56,7 @@ The audit runs 26 automated checks in six groups. Access checks set each engine'
 | --- | --- | --- | --- |
 | I1 | Final HTTP status is 200 | 10 | Google 1, 2 |
 | I2 | No noindex in the robots meta tag or X-Robots-Tag header | 8 | Google 1 |
-| I3 | No nosnippet and no max-snippet:0, which remove the page from AI answers | 5 | Google 1 |
+| I3 | No nosnippet and no max-snippet:0, which remove the page from AI answers. A max-snippet under 50 characters earns half | 5 | Google 1 |
 | I4 | Canonical is absent or points to this page | 2 | Google 2 (duplicates) |
 
 ### Readable content (20 points)
@@ -129,6 +134,18 @@ Two documented quirks are shown as notes. OpenAI says robots.txt may not apply t
 
 **Fix list** order: access blockers first, then failed checks by points lost.
 
+## Site-wide mode
+
+In live mode the owner can audit the whole site instead of one page.
+
+1. The server fetches the entered page and tests each bot user-agent against it.
+2. It reads the sitemaps declared in robots.txt, or /sitemap.xml, following one level of sitemap index (four files at most).
+3. It drops other hosts, files such as PDFs and images, legal and account pages, translations of pages already listed, and anything robots.txt disallows for all crawlers.
+4. It picks up to nine more pages, taking turns across the site's top-level sections, shortest addresses first. With no sitemap it uses the links on the entered page.
+5. Each page gets the full page audit. The site report shows the average score, each engine's worst state with the number of pages affected, a fix list grouped by check with the pages each fix applies to, and a table of pages that opens each page's own report.
+
+The firewall test runs on the entered page only, to keep the number of requests to the site small. A site-wide audit counts as three audits against the rate limit.
+
 ## What the app does not score
 
 Google's 2026 guide lists tactics that have no effect on its AI features. The app reports the first as information and leaves the rest out, so the score cannot be gamed with busywork.
@@ -151,7 +168,7 @@ The prototype is three files with no dependencies, and 29 automated tests pass a
 Limits to state in any demo:
 
 - **Not yet run on real websites.** My workspace cannot reach the open web, so testing used a local site built to trigger each rule. Run it on five real sites before showing it.
-- **One page per audit.** It does not crawl a site.
+- **Site-wide mode samples.** It audits at most 10 pages, not the whole site.
 - **The firewall test is a hint.** Sites that verify crawler IP addresses can refuse the test request while admitting the real bot.
 - **Raw HTML only.** It does not run JavaScript, which is the point of check R1 but undercounts pages Google can still render.
 - **Thresholds are my judgement.** The guides give principles; numbers such as 150 words or 120-word paragraphs are starting values to tune.
@@ -160,8 +177,8 @@ Limits to state in any demo:
 ## Next steps
 
 - [ ] Run the app on five real sites and tune the thresholds that misfire
-- [ ] Host the server so the audit works from a shared link
-- [ ] Add site-wide mode: read the sitemap and audit the top 20 pages
+- [x] Host the server so the audit works from a shared link
+- [x] Add site-wide mode: read the sitemap and audit a sample of pages
 - [ ] Add AI rewrite suggestions for failed structure checks
 - [ ] Get the LinkedIn PDF and Bing guideline text, and convert their manual items into sourced checks
 - [ ] Write the portfolio case study: problem, the Google versus Microsoft tension, and why the tool refuses to predict rankings

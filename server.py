@@ -7,7 +7,10 @@ Serves the app (index.html, engine.js) and two API routes:
   GET  /api/health   -> {"ok": true}
   POST /api/collect  -> body {"url": "https://example.com/page"}
                         returns the bundle engine.js audits:
-                        { url, page, robots, sitemap, llms, ua }
+                        { url, page, robots, sitemap, llms, notFound, ua }
+  POST /api/collect-site -> same body; samples up to 10 pages from the
+                        sitemap (or the page's links) and returns
+                        { url, origin, shared, sampled, pages, errors }
 
 Run:  python3 server.py            (http://localhost:8000)
 Env:  PORT (default 8000), HOST (default 127.0.0.1; use 0.0.0.0 when hosting)
@@ -22,6 +25,8 @@ import http.client
 import ipaddress
 import json
 import os
+import re
+import secrets
 import socket
 import ssl
 import sys
@@ -30,8 +35,10 @@ import time
 import zlib
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urljoin, urlsplit
+from urllib.robotparser import RobotFileParser
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = {
@@ -44,6 +51,11 @@ TIMEOUT = 10            # seconds per request
 MAX_BODY = 3_000_000    # bytes of page or robots.txt kept
 MAX_REDIRECTS = 5
 MAX_REQUEST = 4096      # bytes of POST body accepted
+SITE_PAGES = 10         # pages audited in site-wide mode, the entered page included
+SITE_BODY = 1_000_000   # characters of each page kept in site-wide mode
+SITE_COST = 3           # a site-wide audit counts as this many audits for rate limiting
+MAX_SITEMAPS = 4        # sitemap files read per site
+MAX_SITEMAP_URLS = 5000
 
 BROWSER_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
               '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
@@ -167,12 +179,17 @@ def request_once(url, user_agent, read_body):
         conn.close()
 
 
-def fetch(url, user_agent=BROWSER_UA, read_body=True):
-    """GET url, following redirects. Returns (status, final_url, headers, text)."""
+def fetch(url, user_agent=BROWSER_UA, read_body=True, hops=None):
+    """GET url, following redirects. Returns (status, final_url, headers, text).
+
+    Each redirect followed is appended to hops as {status, url}.
+    """
     for _ in range(MAX_REDIRECTS + 1):
         status, headers, body = request_once(url, user_agent, read_body)
         location = headers.get('Location')
         if status in (301, 302, 303, 307, 308) and location:
+            if hops is not None:
+                hops.append({'status': status, 'url': url})
             url = urljoin(url, location)
             continue
         charset = headers.get_content_charset() or 'utf-8'
@@ -192,10 +209,23 @@ def fetch_status(url, user_agent=BROWSER_UA):
         return None
 
 
-def collect(raw_url):
-    url = normalise_url(raw_url)
+def fetch_page(url):
+    """Fetch one page as a browser. Returns the page part of a bundle."""
+    hops = []
+    status, final_url, headers, body = fetch(url, hops=hops)
+    return {
+        'status': status,
+        'finalUrl': final_url,
+        'xRobotsTag': ', '.join(headers.get_all('X-Robots-Tag') or []),
+        'body': body,
+        'redirects': hops,
+    }
+
+
+def fetch_entry(url):
+    """Fetch the page the person entered, turning failures into readable errors."""
     try:
-        status, final_url, headers, body = fetch(url)
+        return fetch_page(url)
     except ssl.SSLError:
         raise AuditError('The site has a certificate problem, so the page could not be fetched securely.')
     except socket.timeout:
@@ -203,36 +233,221 @@ def collect(raw_url):
     except (OSError, http.client.HTTPException):
         raise AuditError('Could not connect to the site. Check the address and try again.')
 
-    origin = '{0.scheme}://{0.netloc}'.format(urlsplit(final_url))
 
-    def robots():
-        try:
-            st, _, _, text = fetch(origin + '/robots.txt')
-            return {'status': st, 'body': text if st == 200 else ''}
-        except (AuditError, OSError, http.client.HTTPException):
-            return {'status': None, 'body': ''}
+def origin_of(url):
+    return '{0.scheme}://{0.netloc}'.format(urlsplit(url))
 
-    with ThreadPoolExecutor(max_workers=12) as pool:
-        robots_job = pool.submit(robots)
-        sitemap_job = pool.submit(fetch_status, origin + '/sitemap.xml')
-        llms_job = pool.submit(fetch_status, origin + '/llms.txt')
-        ua_jobs = {token: pool.submit(fetch_status, final_url, ua) for token, ua in BOT_UAS.items()}
-        ua = {'browser': status}
-        for token, job in ua_jobs.items():
-            ua[token] = job.result()
+
+def fetch_robots(origin):
+    try:
+        st, _, _, text = fetch(origin + '/robots.txt')
+        return {'status': st, 'body': text if st == 200 else ''}
+    except (AuditError, OSError, http.client.HTTPException):
+        return {'status': None, 'body': ''}
+
+
+def start_shared(pool, origin):
+    """Start the site-level lookups every audit needs. Returns a function that waits for them."""
+    jobs = {
+        'robots': pool.submit(fetch_robots, origin),
+        'sitemap': pool.submit(fetch_status, origin + '/sitemap.xml'),
+        'llms': pool.submit(fetch_status, origin + '/llms.txt'),
+        # A made-up address: a site that answers 200 here serves "soft 404" pages.
+        'notFound': pool.submit(fetch_status, origin + '/quotable-check-' + secrets.token_hex(6)),
+    }
+
+    def result():
         return {
-            'url': url,
-            'page': {
-                'status': status,
-                'finalUrl': final_url,
-                'xRobotsTag': ', '.join(headers.get_all('X-Robots-Tag') or []),
-                'body': body,
-            },
-            'robots': robots_job.result(),
-            'sitemap': {'status': sitemap_job.result()},
-            'llms': {'status': llms_job.result()},
-            'ua': ua,
+            'robots': jobs['robots'].result(),
+            'sitemap': {'status': jobs['sitemap'].result()},
+            'llms': {'status': jobs['llms'].result()},
+            'notFound': {'status': jobs['notFound'].result()},
         }
+    return result
+
+
+def probe_bots(pool, url, browser_status):
+    jobs = {token: pool.submit(fetch_status, url, ua) for token, ua in BOT_UAS.items()}
+    ua = {'browser': browser_status}
+    for token, job in jobs.items():
+        ua[token] = job.result()
+    return ua
+
+
+def collect(raw_url):
+    url = normalise_url(raw_url)
+    page = fetch_entry(url)
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        shared = start_shared(pool, origin_of(page['finalUrl']))
+        ua = probe_bots(pool, page['finalUrl'], page['status'])
+        bundle = {'url': url, 'page': page, 'ua': ua}
+        bundle.update(shared())
+        return bundle
+
+
+# ---------- site-wide mode ----------
+
+NON_PAGE = re.compile(r'\.(pdf|png|jpe?g|gif|webp|svg|ico|zip|gz|xml|json|txt|csv|mp4|mp3|css|js|woff2?)$', re.I)
+BOILERPLATE = re.compile(r'(^|-)(careers?|jobs?|legal|privacy|terms|tos|cookies?|polic(y|ies)|disclaimer|login|signin|signup|cart|checkout)(-|$)', re.I)
+LOCALE = re.compile(r'^[a-z]{2}([-_][a-z]{2,4})?$', re.I)
+LOC = re.compile(r'<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]\s]+)', re.I)
+
+
+def bare_host(url):
+    host = (urlsplit(url).hostname or '').lower()
+    return host[4:] if host.startswith('www.') else host
+
+
+def page_key(url):
+    parts = urlsplit(url)
+    return bare_host(url) + (parts.path.rstrip('/') or '/') + ('?' + parts.query if parts.query else '')
+
+
+class LinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a':
+            href = dict(attrs).get('href')
+            if href:
+                self.links.append(href)
+
+
+def page_links(html, base):
+    parser = LinkParser()
+    try:
+        parser.feed(html)
+    except Exception:
+        pass
+    return [urljoin(base, href) for href in parser.links]
+
+
+def read_sitemap_text(url):
+    """Text of one sitemap file, or '' if it cannot be read."""
+    try:
+        status, _, headers, body = request_sitemap(url)
+    except (AuditError, OSError, http.client.HTTPException):
+        return ''
+    if status != 200:
+        return ''
+    if body[:2] == b'\x1f\x8b':  # a .xml.gz file
+        try:
+            body = zlib.decompressobj(31).decompress(body, MAX_BODY)
+        except zlib.error:
+            return ''
+    return body.decode('utf-8', errors='replace')
+
+
+def request_sitemap(url):
+    for _ in range(MAX_REDIRECTS + 1):
+        status, headers, body = request_once(url, BROWSER_UA, True)
+        location = headers.get('Location')
+        if status in (301, 302, 303, 307, 308) and location:
+            url = urljoin(url, location)
+            continue
+        return status, url, headers, body
+    return 0, url, None, b''
+
+
+def sitemap_urls(origin, robots_body):
+    """Page addresses listed in the site's sitemaps."""
+    declared = [line.split(':', 1)[1].strip() for line in robots_body.splitlines()
+                if line.lower().startswith('sitemap:')]
+    queue = [u for u in declared if u.startswith(('http://', 'https://'))] or [origin + '/sitemap.xml']
+    seen, urls, read = set(), [], 0
+    while queue and read < MAX_SITEMAPS and len(urls) < MAX_SITEMAP_URLS:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+        read += 1
+        text = read_sitemap_text(url)
+        locs = LOC.findall(text)
+        if '<sitemapindex' in text.lower():
+            queue.extend(locs)
+        else:
+            urls.extend(locs[:MAX_SITEMAP_URLS - len(urls)])
+    return urls
+
+
+def choose_pages(candidates, entry_url, robots_body, limit):
+    """Pick up to limit pages, spread across the site's sections. Returns (chosen, eligible count)."""
+    rules = RobotFileParser()
+    rules.parse(robots_body.splitlines())
+    host, entry = bare_host(entry_url), page_key(entry_url)
+    pages = {}
+    for url in candidates:
+        parts = urlsplit(url.strip())
+        if parts.scheme not in ('http', 'https') or bare_host(url) != host:
+            continue
+        clean = parts._replace(fragment='').geturl()
+        key = page_key(clean)
+        segments = [seg for seg in parts.path.lower().split('/') if seg]
+        if key == entry or key in pages or NON_PAGE.search(parts.path):
+            continue
+        if any(BOILERPLATE.search(seg) for seg in segments):
+            continue
+        if not rules.can_fetch('*', clean):
+            continue
+        pages[key] = (clean, segments)
+    # Translations repeat the default-language pages, so skip them.
+    paths = {'/'.join(segments) for _, segments in pages.values()}
+    paths.add('/'.join(seg for seg in urlsplit(entry_url).path.lower().split('/') if seg))
+    kept = [(url, segments) for url, segments in pages.values()
+            if not (segments and LOCALE.match(segments[0]) and '/'.join(segments[1:]) in paths)]
+    sections = {}
+    for url, segments in kept:
+        sections.setdefault(segments[0] if len(segments) > 1 else '', []).append((len(segments), len(url), url))
+    for group in sections.values():
+        group.sort()
+    order = sorted(sections, key=lambda name: (name != '', -len(sections[name]), name))
+    chosen = []
+    while len(chosen) < limit and any(sections.values()):
+        for name in order:
+            if sections[name] and len(chosen) < limit:
+                chosen.append(sections[name].pop(0)[2])
+    return chosen, len(kept)
+
+
+def collect_site(raw_url):
+    url = normalise_url(raw_url)
+    entry = fetch_entry(url)
+    origin = origin_of(entry['finalUrl'])
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        shared_job = start_shared(pool, origin)
+        ua = probe_bots(pool, entry['finalUrl'], entry['status'])
+        shared = shared_job()
+
+    robots_body = shared['robots']['body']
+    listed = sitemap_urls(origin, robots_body)
+    source = 'sitemap'
+    chosen, eligible = choose_pages(listed, entry['finalUrl'], robots_body, SITE_PAGES - 1)
+    if not chosen:
+        source = 'links'
+        chosen, eligible = choose_pages(page_links(entry['body'], entry['finalUrl']), entry['finalUrl'], robots_body, SITE_PAGES - 1)
+
+    def one(page_url):
+        try:
+            return {'url': page_url, 'page': fetch_page(page_url)}
+        except (AuditError, OSError, http.client.HTTPException):
+            return {'url': page_url, 'error': 'Could not fetch this page.'}
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(one, chosen))
+
+    pages = [{'url': url, 'page': entry, 'ua': ua}] + [r for r in results if 'page' in r]
+    for item in pages:
+        item['page']['body'] = item['page']['body'][:SITE_BODY]
+    return {
+        'url': url,
+        'origin': origin,
+        'shared': shared,
+        'sampled': {'source': source if chosen else 'none', 'listed': len(listed), 'eligible': eligible + 1},
+        'pages': pages,
+        'errors': [r for r in results if 'error' in r],
+    }
 
 
 class RateLimiter:
@@ -248,8 +463,8 @@ class RateLimiter:
         self.everyone = deque()
         self.lock = threading.Lock()
 
-    def check(self, client, now=None):
-        """Record one audit. Returns 0 if allowed, else seconds to wait."""
+    def check(self, client, now=None, cost=1):
+        """Record an audit of the given cost. Returns 0 if allowed, else seconds to wait."""
         now = time.monotonic() if now is None else now
         cutoff = now - self.WINDOW
         with self.lock:
@@ -262,12 +477,12 @@ class RateLimiter:
                 mine = self.clients[client] = deque()
             while mine and mine[0] <= cutoff:
                 mine.popleft()
-            if len(mine) >= self.per_client:
+            if mine and len(mine) + cost > self.per_client:
                 return max(1, int(mine[0] - cutoff) + 1)
-            if len(self.everyone) >= self.overall:
+            if self.everyone and len(self.everyone) + cost > self.overall:
                 return max(1, int(self.everyone[0] - cutoff) + 1)
-            mine.append(now)
-            self.everyone.append(now)
+            mine.extend([now] * cost)
+            self.everyone.extend([now] * cost)
             return 0
 
 
@@ -323,8 +538,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {'error': 'Not found.'})
 
     def do_POST(self):
-        if urlsplit(self.path).path != '/api/collect':
+        route = urlsplit(self.path).path
+        if route not in ('/api/collect', '/api/collect-site'):
             return self.send_json(404, {'error': 'Not found.'})
+        site = route == '/api/collect-site'
         try:
             length = int(self.headers.get('Content-Length') or 0)
         except ValueError:
@@ -338,12 +555,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError
         except (ValueError, UnicodeDecodeError):
             return self.send_json(400, {'error': 'Send a JSON body with a url.'})
-        wait = LIMITER.check(self.client_id())
+        wait = LIMITER.check(self.client_id(), cost=SITE_COST if site else 1)
         if wait:
             return self.send_json(429, {'error': 'Too many audits right now. Try again in %d seconds.' % wait},
                                   {'Retry-After': str(wait)})
         try:
-            self.send_json(200, collect(raw_url))
+            self.send_json(200, collect_site(raw_url) if site else collect(raw_url))
         except AuditError as e:
             self.send_json(200, {'error': str(e)})
         except Exception:

@@ -51,6 +51,58 @@ class Site(BaseHTTPRequestHandler):
         pass
 
 
+def article(title):
+    return ('<html><head><title>%s guide for testing</title></head><body><main><h1>%s guide</h1>'
+            '<a href="/blog/one">One</a><a href="/docs/start">Start</a><a href="/pricing">Pricing</a>'
+            '<p>%s</p></main></body></html>') % (title, title, 'Plain words about the topic. ' * 40)
+
+
+class BigSite(BaseHTTPRequestHandler):
+    """A site with a sitemap, a soft 404, a redirect chain and a sign-in wall."""
+
+    PAGES = ['/', '/pricing', '/blog/one', '/blog/two', '/blog/three', '/docs/start', '/docs/api',
+             '/app/dashboard', '/chain']
+    SKIPPED = ['/privacy', '/fr/pricing', '/files/report.pdf', '/secret/plan']
+
+    def do_GET(self):
+        base = 'http://127.0.0.1:%d' % self.server.server_address[1]
+        path = self.path
+        if path == '/robots.txt':
+            return self.reply(200, 'User-agent: *\nDisallow: /secret/\nSitemap: %s/sitemap-index.xml\n' % base)
+        if path == '/sitemap-index.xml':
+            return self.reply(200, '<sitemapindex><sitemap><loc>%s/sitemap-pages.xml</loc></sitemap></sitemapindex>' % base)
+        if path == '/sitemap-pages.xml':
+            locs = ''.join('<url><loc>%s%s</loc></url>' % (base, p) for p in self.PAGES + self.SKIPPED)
+            locs += '<url><loc>https://elsewhere.example/page</loc></url>'
+            return self.reply(200, '<urlset>%s</urlset>' % locs)
+        if path == '/app/dashboard':
+            return self.redirect('/login?next=/app/dashboard')
+        if path.startswith('/login'):
+            return self.reply(200, '<html><head><title>Sign in</title></head><body><form><input type="password"></form></body></html>')
+        if path == '/chain':
+            return self.redirect('/chain2')
+        if path == '/chain2':
+            return self.redirect('/chain3')
+        if path == '/chain3':
+            return self.redirect('/pricing')
+        if path in self.SKIPPED:
+            return self.reply(500, 'this page should never be fetched')
+        if path in self.PAGES:
+            return self.reply(200, article(path.strip('/').replace('/', ' ') or 'home'), {'Content-Type': 'text/html'})
+        # Soft 404: unknown addresses answer 200.
+        self.reply(200, '<html><body><h1>Oops, nothing here</h1></body></html>')
+
+    def redirect(self, to):
+        self.send_response(302)
+        self.send_header('Location', to)
+        self.end_headers()
+
+    reply = Site.reply
+
+    def log_message(self, *args):
+        pass
+
+
 def start(handler):
     httpd = ThreadingHTTPServer(('127.0.0.1', 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -61,11 +113,13 @@ class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.site, cls.site_url = start(Site)
+        cls.big, cls.big_url = start(BigSite)
         cls.app, cls.app_url = start(type('Quiet', (server.Handler,), {'log_message': lambda *a: None}))
 
     @classmethod
     def tearDownClass(cls):
         cls.site.shutdown()
+        cls.big.shutdown()
         cls.app.shutdown()
 
     def setUp(self):
@@ -76,8 +130,8 @@ class ServerTests(unittest.TestCase):
         os.environ.pop('QUOTABLE_ALLOW_PRIVATE', None)
         os.environ.pop('TRUST_PROXY', None)
 
-    def post(self, url):
-        req = urllib.request.Request(self.app_url + '/api/collect', json.dumps({'url': url}).encode(),
+    def post(self, url, route='/api/collect'):
+        req = urllib.request.Request(self.app_url + route, json.dumps({'url': url}).encode(),
                                      {'Content-Type': 'application/json'})
         return json.load(urllib.request.urlopen(req))
 
@@ -133,6 +187,58 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(server.is_public_ip('93.184.216.34'))
         for ip in ('127.0.0.1', '10.1.2.3', '192.168.1.1', '172.16.0.1', '169.254.1.1', '100.64.0.1', '::1', 'fe80::1', 'fc00::1'):
             self.assertFalse(server.is_public_ip(ip), ip)
+
+    def test_missing_page_probe(self):
+        self.assertEqual(self.post(self.site_url + '/page')['notFound']['status'], 404)
+        self.assertEqual(self.post(self.big_url + '/pricing')['notFound']['status'], 200)
+
+    def test_redirect_hops_are_recorded(self):
+        self.assertEqual(self.post(self.site_url + '/page')['page']['redirects'], [])
+        hops = self.post(self.big_url + '/chain')['page']['redirects']
+        self.assertEqual([h['status'] for h in hops], [302, 302, 302])
+        self.assertTrue(hops[0]['url'].endswith('/chain'))
+
+    def test_site_mode_samples_the_sitemap(self):
+        site = self.post(self.big_url + '/', '/api/collect-site')
+        urls = [p['url'] for p in site['pages']]
+        paths = sorted(u.replace(self.big_url, '') for u in urls)
+        self.assertEqual(paths, sorted(BigSite.PAGES))
+        self.assertEqual(urls[0], self.big_url + '/')                # the entered page comes first
+        self.assertEqual(site['sampled']['source'], 'sitemap')
+        self.assertEqual(site['sampled']['listed'], len(BigSite.PAGES) + len(BigSite.SKIPPED) + 1)
+        self.assertEqual(site['errors'], [])
+        self.assertIn('ua', site['pages'][0])                        # bots are tested on the entered page only
+        self.assertNotIn('ua', site['pages'][1])
+        self.assertEqual(site['shared']['notFound']['status'], 200)
+        self.assertEqual(site['shared']['robots']['status'], 200)
+        login = [p for p in site['pages'] if p['url'].endswith('/app/dashboard')][0]
+        self.assertIn('/login', login['page']['finalUrl'])
+
+    def test_site_mode_falls_back_to_links(self):
+        site = self.post(self.site_url + '/old', '/api/collect-site')
+        self.assertEqual(site['sampled']['source'], 'none')         # the test page has no sitemap and no links
+        self.assertEqual(len(site['pages']), 1)
+
+    def test_choose_pages_spreads_across_sections_and_caps(self):
+        base = 'https://example.com'
+        urls = [base + '/blog/post-%d' % i for i in range(30)] + [base + '/docs/a', base + '/docs/b', base + '/about',
+                base + '/de/about', base + '/terms', base + '/logo.png', 'https://other.example/x', base + '/#top']
+        chosen, eligible = server.choose_pages(urls, base + '/', '', 6)
+        self.assertEqual(len(chosen), 6)
+        self.assertEqual(eligible, 33)
+        self.assertIn(base + '/about', chosen)
+        self.assertIn(base + '/docs/a', chosen)
+        self.assertEqual(sum('/blog/' in u for u in chosen), 3)
+        for bad in ('/de/about', '/terms', '/logo.png', 'other.example'):
+            self.assertFalse(any(bad in u for u in chosen), bad)
+
+    def test_site_audit_costs_more_against_the_rate_limit(self):
+        server.LIMITER = server.RateLimiter(4, 1000)
+        self.post(self.site_url + '/page', '/api/collect-site')      # costs 3
+        self.post(self.site_url + '/page')                           # costs 1
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post(self.site_url + '/page')
+        self.assertEqual(ctx.exception.code, 429)
 
     def test_rate_limit_per_client(self):
         server.LIMITER = server.RateLimiter(2, 1000)
