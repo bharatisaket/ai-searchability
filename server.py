@@ -8,14 +8,19 @@ Serves the app (index.html, engine.js) and two API routes:
   POST /api/collect  -> body {"url": "https://example.com/page"}
                         returns the bundle engine.js audits:
                         { url, page, robots, sitemap, llms, notFound, ua }
-  POST /api/collect-site -> same body; samples up to 10 pages from the
-                        sitemap (or the page's links) and returns
-                        { url, origin, shared, sampled, pages, errors }
+  POST /api/collect-site -> same body; fetches the entered page and lists
+                        the rest of the site from its sitemap (or the page's
+                        links): { url, origin, shared, sampled, pages, queue }
+  POST /api/collect-pages -> body {"urls": [...]} (10 at most); fetches the
+                        pages in a site's queue: { pages, errors }
 
 Run:  python3 server.py            (http://localhost:8000)
 Env:  PORT (default 8000), HOST (default 127.0.0.1; use 0.0.0.0 when hosting)
       RATE_LIMIT_PER_CLIENT (default 10) audits per minute per visitor
       RATE_LIMIT_GLOBAL (default 60) audits per minute across all visitors
+      RATE_LIMIT_PAGES_PER_CLIENT (default 120) and RATE_LIMIT_PAGES_GLOBAL
+      (default 600) site pages fetched per minute
+      SITE_MAX_PAGES (default 500) pages in one whole-site audit
       TRUST_PROXY=1 reads the visitor address from X-Forwarded-For (set
       automatically on Render, where every request arrives through its proxy)
       QUOTABLE_ALLOW_PRIVATE=1 lets it fetch private addresses (tests only).
@@ -50,12 +55,12 @@ STATIC = {
 TIMEOUT = 10            # seconds per request
 MAX_BODY = 3_000_000    # bytes of page or robots.txt kept
 MAX_REDIRECTS = 5
-MAX_REQUEST = 4096      # bytes of POST body accepted
-SITE_PAGES = 10         # pages audited in site-wide mode, the entered page included
+MAX_REQUEST = 32768     # bytes of POST body accepted
+BATCH = 10              # pages fetched per /api/collect-pages call
 SITE_BODY = 1_000_000   # characters of each page kept in site-wide mode
 SITE_COST = 3           # a site-wide audit counts as this many audits for rate limiting
-MAX_SITEMAPS = 4        # sitemap files read per site
-MAX_SITEMAP_URLS = 5000
+MAX_SITEMAPS = 50       # sitemap files read per site
+MAX_SITEMAP_URLS = 50000
 
 BROWSER_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
               '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
@@ -423,31 +428,44 @@ def collect_site(raw_url):
     robots_body = shared['robots']['body']
     listed = sitemap_urls(origin, robots_body)
     source = 'sitemap'
-    chosen, eligible = choose_pages(listed, entry['finalUrl'], robots_body, SITE_PAGES - 1)
-    if not chosen:
+    limit = site_max_pages() - 1
+    queue, eligible = choose_pages(listed, entry['finalUrl'], robots_body, limit)
+    if not queue:
         source = 'links'
-        chosen, eligible = choose_pages(page_links(entry['body'], entry['finalUrl']), entry['finalUrl'], robots_body, SITE_PAGES - 1)
+        queue, eligible = choose_pages(page_links(entry['body'], entry['finalUrl']), entry['finalUrl'], robots_body, limit)
 
-    def one(page_url):
-        try:
-            return {'url': page_url, 'page': fetch_page(page_url)}
-        except (AuditError, OSError, http.client.HTTPException):
-            return {'url': page_url, 'error': 'Could not fetch this page.'}
-
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        results = list(pool.map(one, chosen))
-
-    pages = [{'url': url, 'page': entry, 'ua': ua}] + [r for r in results if 'page' in r]
-    for item in pages:
-        item['page']['body'] = item['page']['body'][:SITE_BODY]
+    entry['body'] = entry['body'][:SITE_BODY]
     return {
         'url': url,
         'origin': origin,
         'shared': shared,
-        'sampled': {'source': source if chosen else 'none', 'listed': len(listed), 'eligible': eligible + 1},
-        'pages': pages,
-        'errors': [r for r in results if 'error' in r],
+        'sampled': {'source': source if queue else 'none', 'listed': len(listed), 'eligible': eligible + 1,
+                    'capped': eligible > len(queue), 'batch': BATCH},
+        'pages': [{'url': url, 'page': entry, 'ua': ua}],
+        'queue': queue,
     }
+
+
+def site_max_pages():
+    return env_int('SITE_MAX_PAGES', 500)
+
+
+def collect_pages(urls):
+    """Fetch a batch of pages from a site's queue."""
+    def one(raw):
+        try:
+            page_url = normalise_url(raw)
+            page = fetch_page(page_url)
+            page['body'] = page['body'][:SITE_BODY]
+            return {'url': page_url, 'page': page}
+        except AuditError as e:
+            return {'url': raw, 'error': str(e)}
+        except (OSError, http.client.HTTPException):
+            return {'url': raw, 'error': 'Could not fetch this page.'}
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(one, urls))
+    return {'pages': [r for r in results if 'page' in r], 'errors': [r for r in results if 'error' in r]}
 
 
 class RateLimiter:
@@ -494,6 +512,7 @@ def env_int(name, default):
 
 
 LIMITER = RateLimiter(env_int('RATE_LIMIT_PER_CLIENT', 10), env_int('RATE_LIMIT_GLOBAL', 60))
+PAGE_LIMITER = RateLimiter(env_int('RATE_LIMIT_PAGES_PER_CLIENT', 120), env_int('RATE_LIMIT_PAGES_GLOBAL', 600))
 
 
 def trust_proxy():
@@ -539,9 +558,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = urlsplit(self.path).path
-        if route not in ('/api/collect', '/api/collect-site'):
+        if route not in ('/api/collect', '/api/collect-site', '/api/collect-pages'):
             return self.send_json(404, {'error': 'Not found.'})
         site = route == '/api/collect-site'
+        batch = route == '/api/collect-pages'
         try:
             length = int(self.headers.get('Content-Length') or 0)
         except ValueError:
@@ -551,16 +571,23 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(self.rfile.read(length).decode('utf-8'))
             raw_url = payload.get('url') if isinstance(payload, dict) else None
-            if not isinstance(raw_url, str):
+            urls = payload.get('urls') if isinstance(payload, dict) else None
+            if batch:
+                if not isinstance(urls, list) or not 1 <= len(urls) <= BATCH or not all(isinstance(u, str) for u in urls):
+                    raise ValueError
+            elif not isinstance(raw_url, str):
                 raise ValueError
         except (ValueError, UnicodeDecodeError):
             return self.send_json(400, {'error': 'Send a JSON body with a url.'})
-        wait = LIMITER.check(self.client_id(), cost=SITE_COST if site else 1)
+        if batch:
+            wait = PAGE_LIMITER.check(self.client_id(), cost=len(urls))
+        else:
+            wait = LIMITER.check(self.client_id(), cost=SITE_COST if site else 1)
         if wait:
             return self.send_json(429, {'error': 'Too many audits right now. Try again in %d seconds.' % wait},
                                   {'Retry-After': str(wait)})
         try:
-            self.send_json(200, collect_site(raw_url) if site else collect(raw_url))
+            self.send_json(200, collect_pages(urls) if batch else collect_site(raw_url) if site else collect(raw_url))
         except AuditError as e:
             self.send_json(200, {'error': str(e)})
         except Exception:

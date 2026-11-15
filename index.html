@@ -153,7 +153,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       <fieldset id="scope" class="scope" hidden>
         <legend class="sr">What to audit</legend>
         <label><input type="radio" name="scope" value="page" checked> This page</label>
-        <label><input type="radio" name="scope" value="site"> Whole site (up to 10 pages)</label>
+        <label><input type="radio" name="scope" value="site"> Whole site</label>
       </fieldset>
       <div id="modeNote" class="small muted"></div>
       <div id="paste" hidden>
@@ -317,9 +317,12 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   function renderSite(r) {
     shown = { page: null, site: r, detail: null };
     var n = r.pages.length, sm = r.sampled;
-    var how = n <= 1 ? 'No other pages were found in a sitemap or in the links on that page.'
-      : sm.source === 'sitemap' ? 'The page you entered and ' + (n - 1) + ' chosen from the sitemap, which lists ' + sm.listed + ' addresses. Pages are spread across the site\'s sections; legal pages and translations are skipped.'
-      : 'The page you entered and ' + (n - 1) + ' chosen from the links on it, because no sitemap was found.';
+    var how = sm.source === 'none' ? 'No other pages were found in a sitemap or in the links on that page.'
+      : sm.source === 'sitemap' ? 'Pages come from the sitemap, which lists ' + sm.listed + ' addresses. Legal and account pages, translations, files and pages that robots.txt closes to all crawlers are skipped.'
+      : 'Pages come from the links on the page you entered, because no sitemap was found.';
+    if (r.failed) how += ' The server stopped answering part way through, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
+    else if (r.stopped) how += ' You stopped the audit early, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
+    else if (sm.capped) how += ' The site has ' + sm.eligible + ' eligible pages; one audit covers ' + (n + r.errors.length) + ' of them, spread across its sections.';
     var allOpen = r.engines.filter(function (e) { return e.state === 'open'; }).length;
     var h = '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Site summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
       '<button class="copy" data-src="site" type="button">Copy report as Markdown</button></div>' +
@@ -397,25 +400,72 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     }
     var site = document.querySelector('input[name="scope"]:checked').value === 'site';
     var btn = $('run'); btn.disabled = true; btn.textContent = 'Auditing';
-    say(site ? 'Reading the sitemap and fetching up to 10 pages. This can take up to a minute.'
+    say(site ? 'Fetching the page and reading the sitemap.'
       : 'Fetching the page, robots.txt and testing each bot. This takes a few seconds.');
-    fetch(site ? 'api/collect-site' : 'api/collect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
-      .then(function (res) { return res.json(); })
+    post(site ? 'api/collect-site' : 'api/collect', { url: url })
       .then(function (bundle) {
         if (bundle.error) return say(bundle.error, true);
-        say('');
-        if (site) renderSite(E.auditSite(bundle)); else render(E.audit(bundle), false);
+        if (!site) { say(''); return render(E.audit(bundle), false); }
+        return auditWholeSite(bundle);
       })
       .catch(function () { say('The local server did not answer. Check that server.py is still running.', true); })
       .then(function () { btn.disabled = false; btn.textContent = 'Run audit'; });
   });
+
+  function post(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (res) {
+        return res.json().then(function (json) { json.retryAfter = res.status === 429 ? +res.headers.get('Retry-After') || 5 : 0; return json; });
+      });
+  }
+  function pause(seconds) { return new Promise(function (done) { setTimeout(done, seconds * 1000); }); }
+
+  // Audits the entered page, then works through the rest of the site in batches.
+  function auditWholeSite(site) {
+    var entries = site.pages.map(function (p) { return E.auditSitePage(site.shared, p); });
+    var queue = site.queue || [], total = queue.length + entries.length, size = site.sampled.batch || 10;
+    var errors = [], stopped = false, at = 0;
+    function progress(note) {
+      $('msg').innerHTML = '<div class="notice"><div class="row" style="justify-content:space-between"><span>Audited ' + (entries.length + errors.length) + ' of ' + total +
+        ' pages.' + (note ? ' ' + esc(note) : '') + '</span><button type="button" id="stop">Stop and show results</button></div></div>';
+      $('stop').onclick = function () { stopped = true; this.disabled = true; this.textContent = 'Stopping'; };
+    }
+    function waitOrStop(seconds) { // a pause that ends as soon as the person presses Stop
+      return seconds <= 0 || stopped ? Promise.resolve() : pause(0.25).then(function () { return waitOrStop(seconds - 0.25); });
+    }
+    function next() {
+      if (stopped || at >= queue.length) return;
+      progress('');
+      var urls = queue.slice(at, at + size);
+      return post('api/collect-pages', { urls: urls }).then(function (res) {
+        if (res.retryAfter) {
+          progress('Pausing ' + res.retryAfter + ' seconds to stay within the rate limit.');
+          return waitOrStop(res.retryAfter).then(next);
+        }
+        if (res.error) throw new Error(res.error);
+        at += urls.length;
+        res.pages.forEach(function (p) { entries.push(E.auditSitePage(site.shared, p)); });
+        errors = errors.concat(res.errors);
+        return next();
+      });
+    }
+    var failed = false;
+    return Promise.resolve(next()).catch(function () { failed = true; }).then(function () {
+      say('');
+      site.errors = errors;
+      var report = E.buildSite(site, entries);
+      report.stopped = stopped && at < queue.length;
+      report.failed = failed;
+      renderSite(report);
+    });
+  }
 
   function setMode(isLive) {
     live = isLive;
     $('paste').hidden = isLive;
     $('scope').hidden = !isLive;
     $('modeNote').textContent = isLive
-      ? 'Live mode: fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks. Whole site audits a sample of pages from your sitemap.'
+      ? 'Live mode: fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks. Whole site audits every page in your sitemap.'
       : 'This hosted preview cannot fetch websites. Paste the page source and robots.txt below, or run the app on your computer for live audits.';
   }
 

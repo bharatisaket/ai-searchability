@@ -30,11 +30,11 @@ python3 server.py
 
 Open http://localhost:8000 and the app switches to live mode on its own.
 
-Live mode also offers **Whole site**: it reads the sitemap, audits up to 10 pages spread across the site's sections, and groups the fixes by how many pages they affect. The crawler firewall test runs on the page you entered only.
+Live mode also offers **Whole site**: it reads the sitemap, audits every page it lists, and groups the fixes by how many pages they affect. It works through the site ten pages at a time and can be stopped early. One audit covers at most 500 pages (set `SITE_MAX_PAGES` to change that). The crawler firewall test runs on the page you entered only.
 
 The server refuses private and local network addresses, follows at most five redirects, and only serves `index.html` and `engine.js`. To host it, run it anywhere that runs Python with `HOST=0.0.0.0` and the platform's `PORT`.
 
-Audits are rate limited: 10 per minute per visitor and 60 per minute across everyone. A whole-site audit counts as three. Change these with the `RATE_LIMIT_PER_CLIENT` and `RATE_LIMIT_GLOBAL` environment variables. Counts are kept in memory, so they reset when the server restarts.
+Audits are rate limited: 10 per minute per visitor and 60 per minute across everyone. A whole-site audit counts as three, and its page fetches are limited to 120 pages per minute per visitor and 600 across everyone (`RATE_LIMIT_PAGES_PER_CLIENT`, `RATE_LIMIT_PAGES_GLOBAL`). Change these with the `RATE_LIMIT_PER_CLIENT` and `RATE_LIMIT_GLOBAL` environment variables. Counts are kept in memory, so they reset when the server restarts.
 
 ### Hosting on Render
 

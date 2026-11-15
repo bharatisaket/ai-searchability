@@ -139,12 +139,12 @@ Two documented quirks are shown as notes. OpenAI says robots.txt may not apply t
 In live mode the owner can audit the whole site instead of one page.
 
 1. The server fetches the entered page and tests each bot user-agent against it.
-2. It reads the sitemaps declared in robots.txt, or /sitemap.xml, following one level of sitemap index (four files at most).
+2. It reads the sitemaps declared in robots.txt, or /sitemap.xml, following sitemap indexes (50 files at most).
 3. It drops other hosts, files such as PDFs and images, legal and account pages, translations of pages already listed, and anything robots.txt disallows for all crawlers.
-4. It picks up to nine more pages, taking turns across the site's top-level sections, shortest addresses first. With no sitemap it uses the links on the entered page.
-5. Each page gets the full page audit. The site report shows the average score, each engine's worst state with the number of pages affected, a fix list grouped by check with the pages each fix applies to, and a table of pages that opens each page's own report.
+4. It queues every remaining page, taking turns across the site's top-level sections, shortest addresses first. With no sitemap it uses the links on the entered page.
+5. The browser asks for the queue ten pages at a time, shows progress, and can be stopped early to see results so far. Each page gets the full page audit. The site report shows the average score, each engine's worst state with the number of pages affected, a fix list grouped by check with the pages each fix applies to, and a table of pages that opens each page's own report.
 
-The firewall test runs on the entered page only, to keep the number of requests to the site small. A site-wide audit counts as three audits against the rate limit.
+The firewall test runs on the entered page only, to keep the number of requests to the site small. A site-wide audit counts as three audits against the rate limit, and page fetches have their own limit of 120 pages a minute per visitor, so a large site takes several minutes. One audit covers at most 500 pages (`SITE_MAX_PAGES`); on a larger site those 500 are spread across its sections.
 
 ## What the app does not score
 
@@ -168,7 +168,7 @@ The prototype is three files with no dependencies, and 29 automated tests pass a
 Limits to state in any demo:
 
 - **Not yet run on real websites.** My workspace cannot reach the open web, so testing used a local site built to trigger each rule. Run it on five real sites before showing it.
-- **Site-wide mode samples.** It audits at most 10 pages, not the whole site.
+- **Site-wide mode stops at 500 pages.** Larger sites are sampled across their sections.
 - **The firewall test is a hint.** Sites that verify crawler IP addresses can refuse the test request while admitting the real bot.
 - **Raw HTML only.** It does not run JavaScript, which is the point of check R1 but undercounts pages Google can still render.
 - **Thresholds are my judgement.** The guides give principles; numbers such as 150 words or 120-word paragraphs are starting values to tune.
@@ -178,7 +178,7 @@ Limits to state in any demo:
 
 - [ ] Run the app on five real sites and tune the thresholds that misfire
 - [x] Host the server so the audit works from a shared link
-- [x] Add site-wide mode: read the sitemap and audit a sample of pages
+- [x] Add site-wide mode: read the sitemap and audit every page
 - [ ] Add AI rewrite suggestions for failed structure checks
 - [ ] Get the LinkedIn PDF and Bing guideline text, and convert their manual items into sourced checks
 - [ ] Write the portfolio case study: problem, the Google versus Microsoft tension, and why the tool refuses to predict rankings

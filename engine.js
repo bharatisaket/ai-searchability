@@ -16,6 +16,7 @@
  * page.redirects = [{ status, url }, ...] lists each redirect hop, when known.
  *
  * auditSite() takes { url, origin, shared: { robots, sitemap, llms, notFound }, sampled, pages: [{ url, page, ua }] }.
+ * For large sites, call auditSitePage() per page as pages arrive, then buildSite() once.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -497,13 +498,20 @@
   var STATE_RANK = ['blocked', 'signin', 'firewall', 'restricted', 'partial', 'unknown', 'open'];
   var SITE_WIDE = ['A5', 'D1'];
 
+  // Audits one page of a site. shared = { robots, sitemap, llms, notFound } fetched once for the site.
+  function auditSitePage(shared, p, parse) {
+    shared = shared || {};
+    var report = audit({ url: p.url, page: p.page, ua: p.ua || null, live: true,
+      robots: shared.robots, sitemap: shared.sitemap, llms: shared.llms, notFound: shared.notFound }, parse);
+    return { url: p.url || report.url, finalUrl: report.url, score: report.score, band: report.band, issues: report.fixes.length, report: report };
+  }
+
   function auditSite(site, parse) {
-    var shared = site.shared || {};
-    var pages = (site.pages || []).map(function (p) {
-      var report = audit({ url: p.url, page: p.page, ua: p.ua || null, live: true,
-        robots: shared.robots, sitemap: shared.sitemap, llms: shared.llms, notFound: shared.notFound }, parse);
-      return { url: p.url || report.url, finalUrl: report.url, score: report.score, band: report.band, issues: report.fixes.length, report: report };
-    });
+    return buildSite(site, (site.pages || []).map(function (p) { return auditSitePage(site.shared, p, parse); }));
+  }
+
+  // Combines page results from auditSitePage into one site report.
+  function buildSite(site, pages) {
     var total = pages.length;
     var score = total ? Math.round(pages.reduce(function (n, p) { return n + p.score; }, 0) / total) : 0;
 
@@ -562,5 +570,5 @@
     return lines.join('\n');
   }
 
-  return { audit: audit, auditSite: auditSite, siteToMarkdown: siteToMarkdown, parseRobots: parseRobots, isAllowed: isAllowed, toMarkdown: toMarkdown, SOURCES: SOURCES, ENGINES: ENGINES, TRAINING: TRAINING };
+  return { audit: audit, auditSite: auditSite, auditSitePage: auditSitePage, buildSite: buildSite, siteToMarkdown: siteToMarkdown, parseRobots: parseRobots, isAllowed: isAllowed, toMarkdown: toMarkdown, SOURCES: SOURCES, ENGINES: ENGINES, TRAINING: TRAINING };
 });

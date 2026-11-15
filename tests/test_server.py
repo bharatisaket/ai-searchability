@@ -125,13 +125,15 @@ class ServerTests(unittest.TestCase):
     def setUp(self):
         os.environ['QUOTABLE_ALLOW_PRIVATE'] = '1'
         server.LIMITER = server.RateLimiter(1000, 1000)
+        server.PAGE_LIMITER = server.RateLimiter(1000, 1000)
 
     def tearDown(self):
         os.environ.pop('QUOTABLE_ALLOW_PRIVATE', None)
         os.environ.pop('TRUST_PROXY', None)
 
     def post(self, url, route='/api/collect'):
-        req = urllib.request.Request(self.app_url + route, json.dumps({'url': url}).encode(),
+        body = {'urls': url} if isinstance(url, list) else {'url': url}
+        req = urllib.request.Request(self.app_url + route, json.dumps(body).encode(),
                                      {'Content-Type': 'application/json'})
         return json.load(urllib.request.urlopen(req))
 
@@ -198,21 +200,53 @@ class ServerTests(unittest.TestCase):
         self.assertEqual([h['status'] for h in hops], [302, 302, 302])
         self.assertTrue(hops[0]['url'].endswith('/chain'))
 
-    def test_site_mode_samples_the_sitemap(self):
+    def test_site_mode_lists_every_page_in_the_sitemap(self):
         site = self.post(self.big_url + '/', '/api/collect-site')
-        urls = [p['url'] for p in site['pages']]
-        paths = sorted(u.replace(self.big_url, '') for u in urls)
-        self.assertEqual(paths, sorted(BigSite.PAGES))
-        self.assertEqual(urls[0], self.big_url + '/')                # the entered page comes first
+        self.assertEqual([p['url'] for p in site['pages']], [self.big_url + '/'])   # the entered page is fetched
+        self.assertIn('ua', site['pages'][0])                        # bots are tested on the entered page only
+        paths = sorted(u.replace(self.big_url, '') for u in site['queue'])
+        self.assertEqual(paths, sorted(p for p in BigSite.PAGES if p != '/'))
         self.assertEqual(site['sampled']['source'], 'sitemap')
         self.assertEqual(site['sampled']['listed'], len(BigSite.PAGES) + len(BigSite.SKIPPED) + 1)
-        self.assertEqual(site['errors'], [])
-        self.assertIn('ua', site['pages'][0])                        # bots are tested on the entered page only
-        self.assertNotIn('ua', site['pages'][1])
+        self.assertEqual(site['sampled']['eligible'], len(BigSite.PAGES))
+        self.assertFalse(site['sampled']['capped'])
         self.assertEqual(site['shared']['notFound']['status'], 200)
         self.assertEqual(site['shared']['robots']['status'], 200)
-        login = [p for p in site['pages'] if p['url'].endswith('/app/dashboard')][0]
-        self.assertIn('/login', login['page']['finalUrl'])
+
+    def test_site_mode_caps_very_large_sites(self):
+        os.environ['SITE_MAX_PAGES'] = '4'
+        try:
+            site = self.post(self.big_url + '/', '/api/collect-site')
+        finally:
+            os.environ.pop('SITE_MAX_PAGES')
+        self.assertEqual(len(site['queue']), 3)
+        self.assertTrue(site['sampled']['capped'])
+        self.assertEqual(site['sampled']['eligible'], len(BigSite.PAGES))
+
+    def test_collect_pages_fetches_a_batch(self):
+        res = self.post([self.big_url + '/pricing', self.big_url + '/app/dashboard', 'ftp://nope/'], '/api/collect-pages')
+        self.assertEqual(len(res['pages']), 2)
+        self.assertNotIn('ua', res['pages'][0])
+        self.assertEqual(res['pages'][0]['page']['status'], 200)
+        self.assertIn('/login', res['pages'][1]['page']['finalUrl'])
+        self.assertEqual([e['url'] for e in res['errors']], ['ftp://nope/'])
+
+    def test_collect_pages_limits(self):
+        for urls in ([], [self.big_url + '/pricing'] * 11, ['a', 5]):
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                self.post(urls, '/api/collect-pages')
+            self.assertEqual(ctx.exception.code, 400)
+        server.PAGE_LIMITER = server.RateLimiter(3, 1000)
+        self.post([self.big_url + '/pricing'] * 2, '/api/collect-pages')
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post([self.big_url + '/pricing'] * 2, '/api/collect-pages')
+        self.assertEqual(ctx.exception.code, 429)
+
+    def test_collect_pages_refuses_private_addresses(self):
+        os.environ.pop('QUOTABLE_ALLOW_PRIVATE', None)
+        res = self.post([self.big_url + '/pricing', 'http://169.254.169.254/'], '/api/collect-pages')
+        self.assertEqual(res['pages'], [])
+        self.assertEqual(len(res['errors']), 2)
 
     def test_site_mode_falls_back_to_links(self):
         site = self.post(self.site_url + '/old', '/api/collect-site')
