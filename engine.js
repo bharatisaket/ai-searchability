@@ -244,6 +244,7 @@
     var hiddenWords = q('details, [hidden]', content).reduce(function (n, el) { return n + words(el.textContent); }, 0);
     var listsTables = q('ul, ol, table', content).filter(function (el) { return !el.closest('nav, header, footer'); });
     var paras = q('p', content).map(function (p) { return words(p.textContent); });
+    var firstPara = q('p', content).map(function (p) { return norm(p.textContent); }).filter(function (t) { return t.length >= 60; })[0] || '';
     var longParas = paras.filter(function (n) { return n > 120; }).length;
     var host = u ? u.host.replace(/^www\./, '') : '';
     var internal = {};
@@ -498,6 +499,20 @@
         'Keep pages you want quoted readable without an account. Crawlers cannot sign in.', 'G1')
     ];
 
+    // Ready-to-paste code for the fixes where the page itself supplies the values.
+    var attr = function (t) { return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); };
+    var paste = function (list, id, code, note) {
+      list.forEach(function (c) { if (c.id === id && (c.status === 'fail' || c.status === 'warn')) { c.snippet = code; c.snippetNote = note; } });
+    };
+    if (u) paste(I, 'I4', '<link rel="canonical" href="' + attr(u.origin + u.pathname) + '">', 'Use this only if this address is the version you want engines to keep.');
+    if (!metaDesc && firstPara) {
+      var draft = firstPara.length <= 155 ? firstPara : firstPara.slice(0, 155).replace(/\s+\S*$/, '');
+      paste(S, 'S2', '<meta name="description" content="' + attr(draft) + '">', 'A draft taken from the first paragraph of the page. Edit it to state what the page delivers.');
+    }
+    if (u) paste(E, 'E1', '<script type="application/ld+json">\n' + JSON.stringify({ '@context': 'https://schema.org', '@type': 'Organization',
+      name: 'YOUR ORGANIZATION NAME', url: u.origin + '/', logo: u.origin + '/logo.png', sameAs: ['https://www.linkedin.com/company/YOUR-COMPANY'] }, null, 2) + '\n</scr' + 'ipt>',
+      'Put this in the head of the home page. Replace the name, logo and profile links with your own.');
+
     var groups = [
       { id: 'A', name: 'Access', checks: A, unscored: true },
       { id: 'I', name: 'Indexability', checks: I },
@@ -559,7 +574,8 @@
         if (c.status === 'fail' || c.status === 'warn') {
           fixes.push({ level: (c.id === 'I1' || c.id === 'I2' || c.id === 'A7') && c.status === 'fail' ? 'blocker'
             : c.status !== 'fail' ? 'improve' : g.id === 'A' ? 'warning' : 'fix',
-            id: c.id, title: c.title, detail: c.detail, fix: c.fix, lost: c.points - c.earned, source: c.source });
+            id: c.id, title: c.title, detail: c.detail, fix: c.fix, lost: c.points - c.earned, source: c.source,
+            snippet: c.snippet || '', snippetNote: c.snippetNote || '' });
         }
       });
     });
@@ -628,7 +644,10 @@
       var open = per.filter(function (x) { return x.e.state === 'open'; }).length;
       var worst = per.slice().sort(function (a, b) { return STATE_RANK.indexOf(a.e.state) - STATE_RANK.indexOf(b.e.state); })[0];
       var affected = worst ? per.filter(function (x) { return x.e.state === worst.e.state; }).length : 0;
+      var exceptions = {};
+      per.forEach(function (x) { if (x.e.state !== 'open') (exceptions[x.e.state] = exceptions[x.e.state] || []).push(x.url); });
       return { id: e.id, name: e.name, state: worst ? worst.e.state : 'unknown', open: open, total: total, note: e.note || '',
+        exceptions: exceptions, example: worst && worst.e.state !== 'open' ? worst.e.reason : '',
         reason: !worst ? 'No pages were audited.' : open === total ? 'Open on all ' + total + ' pages audited.'
           : affected + ' of ' + total + ' pages affected. For example ' + worst.url + ': ' + worst.e.reason,
         source: SOURCES[e.source] };
@@ -640,7 +659,7 @@
         var key = f.id || f.title, item = byKey[key];
         if (!item) {
           item = byKey[key] = { id: f.id, level: f.level, title: f.title.replace(' this page', ' some pages'), detail: f.detail, fix: f.fix,
-            source: f.source, lost: 0, pages: [], siteWide: SITE_WIDE.indexOf(f.id) >= 0 || /^robots\.txt returns/.test(f.title) };
+            source: f.source, lost: 0, pages: [], snippet: f.snippet || '', snippetNote: f.snippetNote || '', siteWide: SITE_WIDE.indexOf(f.id) >= 0 || /^robots\.txt returns/.test(f.title) };
           fixes.push(item);
         }
         if (order[f.level] < order[item.level]) item.level = f.level;

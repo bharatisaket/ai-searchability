@@ -20,6 +20,8 @@ Paste-only copy: https://bharatisaket.github.io/ai-searchability/
 
 The hosted app runs in **paste mode**: enter the page URL, paste the page source and the site's `robots.txt`, and run the audit. It cannot fetch websites itself, so the firewall test and sitemap lookup are skipped.
 
+Reports can be shared: after a live audit the address bar holds a link that reruns the same audit when opened. The app also remembers the last report for each address in your browser and shows what changed when you audit it again.
+
 ## Live audits
 
 `server.py` adds **live mode**: it fetches the page, `robots.txt`, `sitemap.xml` and `llms.txt`, then requests the page once as each AI crawler to spot firewall blocks. It needs Python 3.8 or later and nothing else.

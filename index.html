@@ -78,7 +78,18 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .s-warn { color: var(--warn); background: var(--warn-bg); }
 .s-bad { color: var(--bad); background: var(--bad-bg); }
 .s-idle { color: var(--idle); background: var(--idle-bg); }
-.summary { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.summary { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; }
+.verdict { font: 600 20px/1.3 var(--display); text-wrap: balance; padding-left: 12px; border-left: 4px solid var(--idle); }
+.verdict.v-bad { border-color: var(--bad); } .verdict.v-warn { border-color: var(--warn); } .verdict.v-good { border-color: var(--good); }
+.exceptions { margin-top: 12px; overflow-wrap: anywhere; }
+details.more { margin-top: 2px; }
+details.more > summary { cursor: pointer; color: var(--accent); font-weight: 500; padding: 6px 0; }
+details.more[open] > summary { margin-bottom: 8px; }
+.fix pre { margin: 4px 0; }
+label.check { font-weight: 400; display: flex; gap: 7px; align-items: center; }
+label.check input { accent-color: var(--accent); }
+.intro ul.plain { gap: 10px; }
+th button.link { color: inherit; text-decoration: none; font-size: inherit; }
 .dial { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
 .dial svg { width: 150px; height: 150px; }
 .dial .num { font: 700 44px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
@@ -176,6 +187,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 
   <footer>
     Rules come from these guides. The score reports access and readability. It does not predict rankings or citations.
+    <a href="https://github.com/bharatisaket/ai-searchability/blob/main/docs/SPEC.md" target="_blank" rel="noopener">How the score is built</a>
     <ul id="sources"></ul>
   </footer>
 </div>
@@ -186,18 +198,23 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   'use strict';
   var E = window.AuditEngine;
   var $ = function (id) { return document.getElementById(id); };
+  var LIVE_URL = 'https://quotable-6j8a.onrender.com/';
+  var SPEC_URL = 'https://github.com/bharatisaket/ai-searchability/blob/main/docs/SPEC.md';
   var live = false;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function src(s) { return s ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + '</a>' : ''; }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function list(names) { return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]; }
 
   var STATE = {
     open: ['Open', 's-good'], partial: ['Partly open', 's-warn'], blocked: ['Blocked', 's-bad'],
     firewall: ['Check firewall', 's-bad'], restricted: ['Opted out', 's-bad'], signin: ['Sign-in required', 's-bad'],
     unknown: ['Not checked', 's-idle']
   };
-  var CHECK = { pass: ['Pass', 's-good'], warn: ['Partial', 's-warn'], fail: ['Fail', 's-bad'], na: ['N/A', 's-idle'] };
-  var LEVEL = { blocker: ['Blocker', 's-bad'], warning: ['Access', 's-warn'], fix: ['Fix', 's-warn'], improve: ['Improve', 's-idle'] };
+  var CHECK = { pass: ['Pass', 's-good'], warn: ['Partial', 's-warn'], fail: ['Fail', 's-bad'], na: ['Not applicable', 's-idle'] };
+  var LEVEL = { blocker: ['Blocking', 's-bad'], warning: ['Worth fixing', 's-warn'], fix: ['Worth fixing', 's-warn'], improve: ['Optional', 's-idle'] };
+  var SHORT = { google: 'Google', bing: 'Copilot and Bing', chatgpt: 'ChatGPT', claude: 'Claude', perplexity: 'Perplexity' };
   var MANUAL = [
     ['gsc', 'Site is verified in Google Search Console, and the generative AI control is set to include the site', 'G2'],
     ['bwt', 'Site is added to Bing Webmaster Tools, the sitemap is submitted, and IndexNow is switched on', 'BING'],
@@ -225,6 +242,9 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   };
 
   var shown = { page: null, site: null, detail: null };
+  var pagesView = { sort: 'none', blockersOnly: false };
+
+  // ---------- small pieces ----------
 
   function dial(score, band, label) {
     var r = 62, c = 2 * Math.PI * r, off = c * (1 - score / 100);
@@ -237,54 +257,86 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       '<span class="pill ' + (band === 'strong' ? 's-good' : band === 'fair' ? 's-warn' : 's-bad') + '">' + word + '</span></div>';
   }
 
-  function engineRows(engines, showNote) {
+  function snippetHtml(code, note, heading) {
+    return code ? (heading ? '<h3>' + heading + '</h3>' : '') + '<pre>' + esc(code) + '</pre>' + (note ? '<p class="small muted">' + note + '</p>' : '') : '';
+  }
+  var ROBOTS_NOTE = 'A bot that has its own group ignores the <code>*</code> group, so copy across any Disallow lines you still want to apply to it. Remove the bot from any group that disallows it.';
+
+  function actions(which) {
+    return '<div class="row">' + (live ? '<button class="copylink" type="button">Copy link</button>' : '') +
+      '<button class="copy" data-src="' + which + '" type="button">Copy as Markdown</button></div>';
+  }
+
+  // One sentence that says what the report found, before any numbers.
+  function pageVerdict(r) {
+    var shut = r.engines.filter(function (e) { return e.state !== 'open' && e.state !== 'unknown' && e.state !== 'partial'; });
+    var partial = r.engines.filter(function (e) { return e.state === 'partial'; });
+    var unknown = r.engines.filter(function (e) { return e.state === 'unknown'; });
+    var names = function (a) { return list(a.map(function (e) { return SHORT[e.id]; })); };
+    if (shut.length === r.engines.length) return ['No AI search engine can use this page.', 'bad'];
+    if (shut.length) return [names(shut) + ' cannot use this page.', 'bad'];
+    if (partial.length) return ['Every engine can index this page, but ' + names(partial) + ' cannot fetch it on request.', 'warn'];
+    if (unknown.length) return ['Engine access was not checked, because no robots.txt was provided.', 'idle'];
+    return ['All ' + r.engines.length + ' AI search engines can reach this page.', 'good'];
+  }
+
+  function engineRows(engines) {
     return '<div class="engines">' + engines.map(function (e) {
       var st = STATE[e.state];
       return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + st[1] + '">' + st[0] + '</span><span class="why">' +
-        esc(e.reason) + (showNote && e.note && e.state !== 'open' ? ' ' + esc(e.note) : '') + '</span></div>';
+        esc(e.reason) + (e.note && e.state !== 'open' ? ' ' + esc(e.note) : '') + '</span></div>';
     }).join('') + '</div>';
   }
 
-  function snippetHtml(snippet) {
-    return snippet ? '<h3>Add to robots.txt</h3><pre>' + esc(snippet) + '</pre>' +
-      '<p class="small muted">A bot that has its own group ignores the <code>*</code> group, so copy across any Disallow lines you still want to apply to it. Remove the bot from any group that disallows it.</p>' : '';
+  function fixItem(f, extra) {
+    var lv = LEVEL[f.level];
+    return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
+      (extra.pill || '') + (f.lost && !extra.pill ? '<span class="small muted mono">-' + f.lost + ' pts</span>' : '') + '</div>' +
+      (extra.hideDetail ? '' : '<div class="muted small">' + esc(f.detail) + '</div>') +
+      '<div class="do">' + esc(f.fix) + '</div>' + (extra.hideSnippet ? '' : snippetHtml(f.snippet, esc(f.snippetNote))) +
+      '<div class="small">' + src(f.source) + '</div>' + (extra.after || '') + '</li>';
   }
 
-  function summaryCard(r, src, heading) {
-    var open = r.engines.filter(function (e) { return e.state === 'open'; }).length;
-    return '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>' + heading + '</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
-      '<button class="copy" data-src="' + src + '" type="button">Copy report as Markdown</button></div>' +
-      '<div class="summary">' + dial(r.score, r.band, 'page score') + '<div><p class="small muted" style="margin-bottom:8px">' + open + ' of ' + r.engines.length + ' engines can fully reach this page</p>' +
-      engineRows(r.engines, true) + '</div></div>' +
+  // Blocking problems and the next three are shown; the rest fold away.
+  function fixLists(fixes, render) {
+    var lead = fixes.filter(function (f) { return f.level === 'blocker'; }).length + 3;
+    var top = fixes.slice(0, lead), rest = fixes.slice(lead);
+    return '<ol class="fixes">' + top.map(render).join('') + '</ol>' +
+      (rest.length ? '<details class="more"><summary>Show ' + rest.length + ' more</summary><ol class="fixes" style="counter-reset: fix ' + top.length + '">' + rest.map(render).join('') + '</ol></details>' : '');
+  }
+
+  // ---------- page report ----------
+
+  function summaryCard(r, which, heading) {
+    var v = pageVerdict(r);
+    return '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>' + heading + '</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' + actions(which) + '</div>' +
+      '<p class="verdict v-' + v[1] + '">' + esc(v[0]) + '</p>' +
+      '<div class="summary"><div>' + engineRows(r.engines) + '</div>' + dial(r.score, r.band, 'page score') + '</div>' +
       (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode. The home page checks run only when you paste the home page.</p>' : '') +
       '</section>';
   }
 
   function fixCard(r) {
-    var h = '<section class="card"><h2>Fix list</h2>';
+    var h = '<section class="card"><h2>What to fix</h2>';
     if (!r.fixes.length) return h + '<p>Nothing to fix. Every engine can reach this page and every check passed.</p></section>';
-    h += '<p class="muted small">Access problems first, then checks by points lost.</p><ol class="fixes">' + r.fixes.map(function (f) {
-      var lv = LEVEL[f.level];
-      return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
-        (f.lost ? '<span class="small muted mono">-' + f.lost + ' pts</span>' : '') + '</div>' +
-        '<div class="muted small">' + esc(f.detail) + '</div><div class="do">' + esc(f.fix) + '</div><div class="small">' + src(f.source) + '</div></li>';
-    }).join('') + '</ol>';
-    return h + snippetHtml(r.robotsSnippet) + '</section>';
+    return h + '<p class="muted small">Problems that block engines come first, then checks by points lost.</p>' +
+      fixLists(r.fixes, function (f) { return fixItem(f, {}); }) + snippetHtml(r.robotsSnippet, ROBOTS_NOTE, 'Add to robots.txt') + '</section>';
   }
 
   function checksCard(r) {
-    return '<section class="card"><h2>Checks</h2>' + r.groups.map(function (g) {
-      var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
-      return '<details class="group"' + ((g.unscored ? bad : g.earned < g.max) ? ' open' : '') + '><summary><span class="gname"><strong>' + esc(g.name) + '</strong></span>' +
-        (g.unscored ? '<span class="small muted">not scored</span><span class="pts">' + (bad ? bad + ' issue' + (bad > 1 ? 's' : '') : 'ok') + '</span>'
-          : '<span class="bar"><i style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="pts">' + g.earned + '/' + g.max + '</span>') + '</summary>' +
-        '<div class="tablewrap"><table><thead><tr><th>ID</th><th>Check</th><th>Result</th><th>Points</th></tr></thead><tbody>' +
-        g.checks.map(function (c) {
-          var st = CHECK[c.status];
-          return '<tr><td class="n">' + c.id + '</td><td><strong>' + esc(c.title) + '</strong><div class="muted small">' + esc(c.detail) + ' ' + src(c.source) + '</div></td>' +
-            '<td><span class="pill ' + st[1] + '">' + st[0] + '</span></td><td class="n">' + (c.points ? c.earned + '/' + c.points : '&ndash;') + '</td></tr>';
-        }).join('') + '</tbody></table></div></details>';
-    }).join('') + '</section>';
+    return '<section class="card"><h2>All checks</h2><p class="muted small">Limits such as 150 words or 120-word paragraphs are starting values chosen for this tool, not rules set by the engines. <a href="' + SPEC_URL + '" target="_blank" rel="noopener">How the score is built</a></p>' +
+      r.groups.map(function (g) {
+        var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
+        return '<details class="group"' + ((g.unscored ? bad : g.earned < g.max) ? ' open' : '') + '><summary><span class="gname"><strong>' + esc(g.name) + '</strong></span>' +
+          (g.unscored ? '<span class="small muted">not scored</span><span class="pts">' + (bad ? plural(bad, 'issue') : 'ok') + '</span>'
+            : '<span class="bar"><i style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="pts">' + g.earned + '/' + g.max + '</span>') + '</summary>' +
+          '<div class="tablewrap"><table><thead><tr><th>Check</th><th>Result</th><th>Points</th></tr></thead><tbody>' +
+          g.checks.map(function (c) {
+            var st = CHECK[c.status];
+            return '<tr title="Check ' + c.id + '"><td><strong>' + esc(c.title) + '</strong><div class="muted small">' + esc(c.detail) + ' ' + src(c.source) + '</div></td>' +
+              '<td><span class="pill ' + st[1] + '">' + st[0] + '</span></td><td class="n">' + (c.points ? c.earned + '/' + c.points : '&ndash;') + '</td></tr>';
+          }).join('') + '</tbody></table></div></details>';
+      }).join('') + '</section>';
   }
 
   function siteWideCards(r) {
@@ -306,54 +358,147 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       '<li><strong>Keyword variants and bought mentions.</strong> Not checked. ' + src(E.SOURCES.G2) + '</li></ul></section>';
   }
 
+  // ---------- what changed since the last audit of the same address ----------
+
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+  function snapshot(r) {
+    var issues = {};
+    r.fixes.forEach(function (f) { issues[f.id || f.title] = f.title; });
+    return { t: Date.now(), score: r.score, issues: issues };
+  }
+
+  function changesCard(r, kind) {
+    var key = 'quotable-last-' + kind + '-' + r.url.replace(/\/+$/, '').toLowerCase();
+    var before = null, now = snapshot(r);
+    try { before = JSON.parse(store(key)); } catch (e) { /* no earlier audit */ }
+    store(key, JSON.stringify(now));
+    if (!before || !before.issues) return '';
+    var fixed = Object.keys(before.issues).filter(function (k) { return !(k in now.issues); }).map(function (k) { return before.issues[k]; });
+    var added = Object.keys(now.issues).filter(function (k) { return !(k in before.issues); }).map(function (k) { return now.issues[k]; });
+    var when = new Date(before.t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    var diff = now.score - before.score;
+    var h = '<section class="card changes"><h2>Since your last audit</h2><p class="muted small">Compared with the audit you ran in this browser on ' + esc(when) + '.</p>';
+    if (!diff && !fixed.length && !added.length) return h + '<p>Nothing has changed.</p></section>';
+    h += '<p><strong>Score ' + before.score + ' &rarr; ' + now.score + '</strong>' + (diff ? ' (' + (diff > 0 ? '+' : '') + diff + ')' : '') + '</p>';
+    if (fixed.length) h += '<p><span class="pill s-good">Fixed</span> ' + esc(fixed.join('; ')) + '</p>';
+    if (added.length) h += '<p><span class="pill s-bad">New</span> ' + esc(added.join('; ')) + '</p>';
+    return h + '</section>';
+  }
+
+  // ---------- rendering ----------
+
+  function intro() {
+    shown = { page: null, site: null, detail: null };
+    $('report').innerHTML = '<section class="card intro"><h2>What you get</h2><ul class="plain">' +
+      '<li><strong>Which engines can get in.</strong> Google AI Overviews, Copilot, ChatGPT search, Claude and Perplexity, checked against your robots.txt, firewall and index settings.</li>' +
+      '<li><strong>A page score out of 100</strong> for how easy the page is to read and quote.</li>' +
+      '<li><strong>A fix list in priority order</strong>, with code to paste where that helps. Each finding links to the engine\'s own documentation.</li></ul>' +
+      '<p class="small muted">The score reports access and readability. It does not predict rankings or citations.</p>' +
+      '<div><button type="button" id="example">See an example report</button></div></section>';
+  }
+
   function render(r, isSample) {
     shown = { page: r, site: null, detail: null };
     $('report').innerHTML =
-      (isSample ? '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes, so you can see what an audit returns. Run your own above.</div>' : '') +
+      (isSample ? '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes. Enter your own address above to audit a real page.</div>' : changesCard(r, 'page')) +
       summaryCard(r, 'page', 'Summary') + fixCard(r) + checksCard(r) + siteWideCards(r);
     restoreChecklist();
   }
 
+  function siteVerdict(r) {
+    var n = r.pages.length;
+    var shut = r.engines.filter(function (e) { return e.open === 0; }), some = r.engines.filter(function (e) { return e.open > 0 && e.open < e.total; });
+    var names = function (a) { return list(a.map(function (e) { return SHORT[e.id]; })); };
+    if (shut.length === r.engines.length) return ['No AI search engine can use any of the ' + n + ' pages audited.', 'bad'];
+    if (shut.length) return [names(shut) + ' cannot use any of the ' + n + ' pages audited.', 'bad'];
+    if (some.length) {
+      var worst = Math.max.apply(null, some.map(function (e) { return e.total - e.open; }));
+      return ['Engines can reach most of the site, but ' + plural(worst, 'page') + ' out of ' + n + ' ' + (worst === 1 ? 'is' : 'are') + ' closed to at least one engine.', 'warn'];
+    }
+    return ['All ' + r.engines.length + ' AI search engines can reach all ' + n + ' pages audited.', 'good'];
+  }
+
+  function siteEngineRows(r) {
+    return '<div class="engines">' + r.engines.map(function (e) {
+      var pill = e.open === e.total ? ['Open', 's-good'] : e.open === 0 ? STATE[e.state] : ['Open on ' + e.open + ' of ' + e.total, 's-warn'];
+      var why = e.open === e.total ? '' : e.open === 0 ? e.example : '';
+      return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + pill[1] + '">' + pill[0] + '</span>' +
+        (why ? '<span class="why">' + esc(why) + '</span>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+
+  // Each kind of exception is stated once, with the engines and pages it covers.
+  function exceptionsHtml(r) {
+    var byState = {};
+    r.engines.forEach(function (e) {
+      if (e.open === 0 || e.open === e.total) return;
+      Object.keys(e.exceptions).forEach(function (state) {
+        var item = byState[state] = byState[state] || { engines: [], urls: {} };
+        item.engines.push(SHORT[e.id]);
+        e.exceptions[state].forEach(function (u) { item.urls[u] = true; });
+      });
+    });
+    var states = Object.keys(byState);
+    if (!states.length) return '';
+    return '<ul class="plain small exceptions">' + states.map(function (state) {
+      var item = byState[state], urls = Object.keys(item.urls);
+      return '<li><strong>' + STATE[state][0] + '</strong> on ' + plural(urls.length, 'page') + ', for ' + (item.engines.length === r.engines.length ? 'every engine' : esc(list(item.engines))) + ': ' +
+        urls.slice(0, 3).map(esc).join(', ') + (urls.length > 3 ? ' and ' + (urls.length - 3) + ' more' : '') + '. Open the page below for the reason.</li>';
+    }).join('') + '</ul>';
+  }
+
+  function pageRows() {
+    var r = shown.site, rows = r.pages.map(function (p, i) { return { p: p, i: i }; });
+    if (pagesView.blockersOnly) rows = rows.filter(function (x) { return x.p.report.fixes.some(function (f) { return f.level === 'blocker'; }); });
+    if (pagesView.sort !== 'none') rows.sort(function (a, b) { return pagesView.sort === 'asc' ? a.p.score - b.p.score : b.p.score - a.p.score; });
+    if (!rows.length) return '<tr><td colspan="4" class="muted">No pages match.</td></tr>';
+    return rows.map(function (x) {
+      var p = x.p, pill = p.band === 'strong' ? ['Strong', 's-good'] : p.band === 'fair' ? ['Fair', 's-warn'] : ['Needs work', 's-bad'];
+      return '<tr><td><button class="link" type="button" data-page="' + x.i + '">' + esc(p.url) + '</button></td><td class="n">' + p.score + '</td>' +
+        '<td><span class="pill ' + pill[1] + '">' + pill[0] + '</span></td><td class="n">' + p.issues + '</td></tr>';
+    }).join('');
+  }
+
   function renderSite(r) {
     shown = { page: null, site: r, detail: null };
-    var n = r.pages.length, sm = r.sampled;
+    pagesView = { sort: 'none', blockersOnly: false };
+    var n = r.pages.length, sm = r.sampled, v = siteVerdict(r);
     var how = sm.source === 'none' ? 'No other pages were found in a sitemap or in the links on that page.'
       : sm.source === 'sitemap' ? 'Pages come from the sitemap, which lists ' + sm.listed + ' addresses. Legal and account pages, translations, files and pages that robots.txt closes to all crawlers are skipped.'
       : 'Pages come from the links on the page you entered, because no sitemap was found.';
     if (r.failed) how += ' The server stopped answering part way through, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
     else if (r.stopped) how += ' You stopped the audit early, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
     else if (sm.capped) how += ' The site has ' + sm.eligible + ' eligible pages; one audit covers ' + (n + r.errors.length) + ' of them, spread across its sections.';
-    var allOpen = r.engines.filter(function (e) { return e.state === 'open'; }).length;
-    var h = '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Site summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' +
-      '<button class="copy" data-src="site" type="button">Copy report as Markdown</button></div>' +
-      '<div class="summary">' + dial(r.score, r.band, 'average score') + '<div><p class="small muted" style="margin-bottom:8px">' + allOpen + ' of ' + r.engines.length + ' engines can fully reach every page audited</p>' +
-      engineRows(r.engines, false) + '</div></div>' +
-      '<p class="small muted"><strong>' + n + ' page' + (n === 1 ? '' : 's') + ' audited.</strong> ' + how +
-      (r.errors.length ? ' ' + r.errors.length + ' page(s) could not be fetched.' : '') + ' The firewall test ran on the page you entered only.</p></section>';
 
-    h += '<section class="card"><h2>Fix list for the site</h2>';
+    var h = changesCard(r, 'site') +
+      '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Site summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' + actions('site') + '</div>' +
+      '<p class="verdict v-' + v[1] + '">' + esc(v[0]) + '</p>' +
+      '<div class="summary"><div>' + siteEngineRows(r) + exceptionsHtml(r) + '</div>' + dial(r.score, r.band, 'average score') + '</div>' +
+      '<p class="small muted"><strong>' + plural(n, 'page') + ' audited.</strong> ' + how +
+      (r.errors.length ? ' ' + plural(r.errors.length, 'page') + ' could not be fetched.' : '') + ' The firewall test ran on the page you entered only.</p></section>';
+
+    h += '<section class="card"><h2>What to fix across the site</h2>';
     if (!r.fixes.length) h += '<p>Nothing to fix on the pages audited.</p>';
     else {
-      h += '<p class="muted small">Access problems first, then the fixes that affect the most pages.</p><ol class="fixes">' + r.fixes.map(function (f) {
-        var lv = LEVEL[f.level];
-        return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
-          '<span class="pill s-idle">' + (f.siteWide ? 'Whole site' : f.pages.length + ' of ' + n + ' pages') + '</span></div>' +
-          (f.siteWide ? '<div class="muted small">' + esc(f.detail) + '</div>' : '') +
-          '<div class="do">' + esc(f.fix) + '</div><div class="small">' + src(f.source) + '</div>' +
-          (f.siteWide ? '' : '<details><summary>Pages affected</summary><ul>' + f.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>') + '</li>';
-      }).join('') + '</ol>' + snippetHtml(r.robotsSnippet);
+      h += '<p class="muted small">Problems that block engines come first, then the fixes that affect the most pages.</p>' + fixLists(r.fixes, function (f) {
+        return fixItem(f, {
+          pill: '<span class="pill s-idle">' + (f.siteWide ? 'Whole site' : f.pages.length + ' of ' + n + ' pages') + '</span>',
+          hideDetail: !f.siteWide, hideSnippet: !f.siteWide,
+          after: f.siteWide ? '' : '<details><summary>Pages affected</summary><ul>' + f.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>'
+        });
+      }) + snippetHtml(r.robotsSnippet, ROBOTS_NOTE, 'Add to robots.txt');
     }
     h += '</section>';
 
-    h += '<section class="card"><h2>Pages</h2><p class="muted small">Choose a page to see its full report.</p>' +
-      '<div class="tablewrap"><table><thead><tr><th>Page</th><th>Score</th><th>Rating</th><th>Issues</th></tr></thead><tbody>' +
-      r.pages.map(function (p, i) {
-        var pill = p.band === 'strong' ? ['Strong', 's-good'] : p.band === 'fair' ? ['Fair', 's-warn'] : ['Needs work', 's-bad'];
-        return '<tr><td><button class="link" type="button" data-page="' + i + '">' + esc(p.url) + '</button></td><td class="n">' + p.score + '</td>' +
-          '<td><span class="pill ' + pill[1] + '">' + pill[0] + '</span></td><td class="n">' + p.issues + '</td></tr>';
-      }).join('') + '</tbody></table></div></section>';
+    h += '<section class="card"><div class="row" style="justify-content:space-between"><h2>Pages</h2>' +
+      '<label class="check"><input type="checkbox" id="blockersOnly"> Only pages with blocking problems</label></div>' +
+      '<p class="muted small">Choose a page to see its full report.</p>' +
+      '<div class="tablewrap"><table><thead><tr><th>Page</th><th><button class="link" type="button" id="sortScore" aria-label="Sort by score">Score <span id="sortMark" aria-hidden="true">&#8597;</span></button></th><th>Rating</th><th>Issues</th></tr></thead>' +
+      '<tbody id="pageRows"></tbody></table></div></section>';
 
     $('report').innerHTML = h + '<div id="detail"></div>' + siteWideCards(r);
+    $('pageRows').innerHTML = pageRows();
     restoreChecklist();
   }
 
@@ -364,23 +509,56 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
   function restoreChecklist() {
     Array.prototype.forEach.call(document.querySelectorAll('.checks input'), function (cb) { cb.checked = store('quotable-' + cb.dataset.k) === '1'; });
   }
+
+  function flash(btn, text) {
+    var old = btn.textContent; btn.textContent = text;
+    setTimeout(function () { btn.textContent = old; }, 1800);
+  }
+  function copy(btn, text) {
+    try { navigator.clipboard.writeText(text).then(function () { flash(btn, 'Copied'); }, function () { flash(btn, 'Copy was blocked'); }); } catch (e) { flash(btn, 'Copy was blocked'); }
+  }
+
   $('report').addEventListener('change', function (ev) {
     if (ev.target.matches('.checks input')) store('quotable-' + ev.target.dataset.k, ev.target.checked ? '1' : '0');
+    if (ev.target.id === 'blockersOnly') { pagesView.blockersOnly = ev.target.checked; $('pageRows').innerHTML = pageRows(); }
   });
   $('report').addEventListener('click', function (ev) {
-    if (ev.target.dataset.page !== undefined) return showDetail(+ev.target.dataset.page);
-    if (!ev.target.classList.contains('copy')) return;
-    var btn = ev.target, which = btn.dataset.src;
-    var md = which === 'site' ? E.siteToMarkdown(shown.site) : E.toMarkdown(shown[which]);
-    var done = function (t) { btn.textContent = t; setTimeout(function () { btn.textContent = 'Copy report as Markdown'; }, 1800); };
-    try { navigator.clipboard.writeText(md).then(function () { done('Copied'); }, function () { done('Copy was blocked'); }); } catch (e) { done('Copy was blocked'); }
+    var t = ev.target.closest('button');
+    if (!t) return;
+    if (t.id === 'example') return render(E.audit(SAMPLE), true);
+    if (t.dataset.page !== undefined) return showDetail(+t.dataset.page);
+    if (t.id === 'sortScore') {
+      pagesView.sort = pagesView.sort === 'asc' ? 'desc' : 'asc';
+      $('sortMark').innerHTML = pagesView.sort === 'asc' ? '&#8593;' : '&#8595;';
+      t.setAttribute('aria-label', 'Sorted by score, ' + (pagesView.sort === 'asc' ? 'lowest first' : 'highest first'));
+      return void ($('pageRows').innerHTML = pageRows());
+    }
+    if (t.classList.contains('copylink')) return copy(t, location.href);
+    if (t.classList.contains('copy')) {
+      var which = t.dataset.src;
+      copy(t, which === 'site' ? E.siteToMarkdown(shown.site) : E.toMarkdown(shown[which]));
+    }
   });
 
   function say(text, isErr) { $('msg').innerHTML = text ? '<div class="notice' + (isErr ? ' err' : '') + '">' + esc(text) + '</div>' : ''; }
+
+  // ---------- running audits ----------
+
+  function post(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (res) {
+        return res.json().then(function (json) { json.retryAfter = res.status === 429 ? +res.headers.get('Retry-After') || 5 : 0; return json; });
+      });
+  }
+  function pause(seconds) { return new Promise(function (done) { setTimeout(done, seconds * 1000); }); }
+
+  // Puts the audited address in the page's own address, so the report can be bookmarked and sent.
+  function remember(url, site) {
+    try { history.replaceState(null, '', '?url=' + encodeURIComponent(url) + (site ? '&scope=site' : '')); } catch (e) { /* not allowed here */ }
+  }
 
   $('form').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -391,7 +569,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 
     if (!live) {
       var html = $('html').value;
-      if (!html.trim()) return say('Paste the page source to audit it here, or run the app locally for live audits.', true);
+      if (!html.trim()) return say('Paste the page source to audit it here.', true);
       var robotsTxt = $('robots').value;
       say('');
       render(E.audit({ url: url, page: { status: null, finalUrl: url, xRobotsTag: '', body: html },
@@ -404,30 +582,26 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       : 'Fetching the page, robots.txt and testing each bot. This takes a few seconds.');
     post(site ? 'api/collect-site' : 'api/collect', { url: url })
       .then(function (bundle) {
+        if (bundle.retryAfter) return say(bundle.error, true);
         if (bundle.error) return say(bundle.error, true);
+        remember(url, site);
         if (!site) { say(''); return render(E.audit(bundle), false); }
         return auditWholeSite(bundle);
       })
-      .catch(function () { say('The local server did not answer. Check that server.py is still running.', true); })
+      .catch(function () { say('The server did not answer. Wait a moment and try again.', true); })
       .then(function () { btn.disabled = false; btn.textContent = 'Run audit'; });
   });
-
-  function post(path, body) {
-    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (res) {
-        return res.json().then(function (json) { json.retryAfter = res.status === 429 ? +res.headers.get('Retry-After') || 5 : 0; return json; });
-      });
-  }
-  function pause(seconds) { return new Promise(function (done) { setTimeout(done, seconds * 1000); }); }
 
   // Audits the entered page, then works through the rest of the site in batches.
   function auditWholeSite(site) {
     var entries = site.pages.map(function (p) { return E.auditSitePage(site.shared, p); });
     var queue = site.queue || [], total = queue.length + entries.length, size = site.sampled.batch || 10;
-    var errors = [], stopped = false, at = 0;
+    var errors = [], stopped = false, failed = false, at = 0;
     function progress(note) {
-      $('msg').innerHTML = '<div class="notice"><div class="row" style="justify-content:space-between"><span>Audited ' + (entries.length + errors.length) + ' of ' + total +
-        ' pages.' + (note ? ' ' + esc(note) : '') + '</span><button type="button" id="stop">Stop and show results</button></div></div>';
+      var done = entries.length + errors.length;
+      $('msg').innerHTML = '<div class="notice"><div class="row" style="justify-content:space-between"><span>Audited ' + done + ' of ' + total +
+        ' pages.' + (note ? ' ' + esc(note) : '') + '</span><button type="button" id="stop">Stop and show results</button></div>' +
+        '<div class="bar" style="margin-top:10px"><i style="width:' + (100 * done / total) + '%"></i></div></div>';
       $('stop').onclick = function () { stopped = true; this.disabled = true; this.textContent = 'Stopping'; };
     }
     function waitOrStop(seconds) { // a pause that ends as soon as the person presses Stop
@@ -449,7 +623,6 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
         return next();
       });
     }
-    var failed = false;
     return Promise.resolve(next()).catch(function () { failed = true; }).then(function () {
       say('');
       site.errors = errors;
@@ -464,20 +637,29 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     live = isLive;
     $('paste').hidden = isLive;
     $('scope').hidden = !isLive;
-    $('modeNote').textContent = isLive
-      ? 'Live mode: fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks. Whole site audits every page in your sitemap.'
-      : 'This hosted preview cannot fetch websites. Paste the page source and robots.txt below, or run the app on your computer for live audits.';
+    $('modeNote').innerHTML = isLive
+      ? 'Fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks. Whole site audits every page in your sitemap.'
+      : (/github\.io$/.test(location.hostname) ? 'This copy cannot fetch websites. <a href="' + LIVE_URL + '">Open the live app</a> to audit a page by its address, or paste the page source and robots.txt below.'
+        : 'No audit server is running here, so paste the page source and robots.txt below.');
   }
 
   $('sources').innerHTML = Object.keys(E.SOURCES).map(function (k) { return '<li>' + src(E.SOURCES[k]) + '</li>'; }).join('');
   setMode(false);
-  render(E.audit(SAMPLE), true);
+  intro();
+
+  var params = new URLSearchParams(location.search), wanted = params.get('url');
+  if (wanted) $('url').value = wanted;
+  if (params.get('scope') === 'site') document.querySelector('input[value="site"]').checked = true;
 
   var ctl = typeof AbortController === 'function' ? new AbortController() : null;
   if (ctl) setTimeout(function () { ctl.abort(); }, 2500);
   fetch('api/health', ctl ? { signal: ctl.signal } : {})
     .then(function (res) { return res.ok ? res.json() : null; })
-    .then(function (j) { if (j && j.ok) setMode(true); })
+    .then(function (j) {
+      if (!j || !j.ok) return;
+      setMode(true);
+      if (wanted) $('run').click(); // a shared link reruns its audit
+    })
     .catch(function () { /* no backend: stay in paste mode */ });
 })();
 </script>
