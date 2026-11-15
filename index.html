@@ -79,7 +79,46 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .s-bad { color: var(--bad); background: var(--bad-bg); }
 .s-idle { color: var(--idle); background: var(--idle-bg); }
 .summary { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; }
-.verdict { font: 600 20px/1.3 var(--display); text-wrap: balance; padding-left: 12px; border-left: 4px solid var(--idle); }
+.verdict { font: 600 24px/1.25 var(--display); text-wrap: balance; padding-left: 14px; border-left: 4px solid var(--idle); }
+.rhead { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 0; }
+.eyebrow { font: 500 12.5px var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.rurl { overflow-wrap: anywhere; }
+.insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.insight { display: grid; grid-template-columns: 30px 1fr; gap: 12px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px; padding: 14px; }
+.insight.i-bad { border-left-color: var(--bad); } .insight.i-warn { border-left-color: var(--warn); } .insight.i-idle { border-left-color: var(--idle); }
+.inum { width: 28px; height: 28px; border-radius: 50%; background: var(--idle-bg); color: var(--ink); font: 600 14px var(--body); display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.ibody { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.ibody h3 { font-size: 16.5px; line-height: 1.35; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.affected summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
+.affected ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; overflow-wrap: anywhere; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.tlabel { font-size: 13px; color: var(--muted); }
+.tvalue { font: 700 32px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.tunit { font: 500 14px var(--body); color: var(--muted); margin-left: 2px; }
+.tnote { font-size: 12.5px; color: var(--muted); }
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.areas { display: flex; flex-direction: column; gap: 9px; }
+.area { display: grid; grid-template-columns: 128px 1fr 58px; gap: 10px; align-items: center; font-size: 14.5px; }
+.meter { height: 8px; background: var(--idle-bg); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.avalue { text-align: right; font: 13.5px var(--mono); font-variant-numeric: tabular-nums; }
+.notscored { margin-top: 2px; }
+.split { display: flex; gap: 2px; height: 10px; }
+.split i { display: block; border-radius: 3px; min-width: 6px; }
+.legend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13.5px; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: "+"; font: 500 18px var(--mono); color: var(--muted); width: 14px; }
+details.fold[open] > summary::before { content: "-"; }
+details.fold > summary h2 { font-size: 18px; }
+.count { font: 500 13px var(--body); color: var(--muted); background: var(--idle-bg); border-radius: 999px; padding: 2px 9px; vertical-align: middle; }
+.changes { gap: 8px; }
 .verdict.v-bad { border-color: var(--bad); } .verdict.v-warn { border-color: var(--warn); } .verdict.v-good { border-color: var(--good); }
 .exceptions { margin-top: 12px; overflow-wrap: anywhere; }
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -145,7 +184,9 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 #detail:empty { display: none; }
 #report { display: flex; flex-direction: column; gap: 22px; }
 @media (max-width: 640px) {
-  .summary, .two { grid-template-columns: 1fr; }
+  .summary, .two, .panels { grid-template-columns: 1fr; }
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .verdict { font-size: 20px; }
   details.group summary { grid-template-columns: 1fr 70px 56px; }
   footer ul { columns: 1; }
   h1 { font-size: 25px; }
@@ -252,17 +293,6 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 
   // ---------- small pieces ----------
 
-  function dial(score, band, label) {
-    var r = 62, c = 2 * Math.PI * r, off = c * (1 - score / 100);
-    var color = band === 'strong' ? 'var(--good)' : band === 'fair' ? 'var(--warn)' : 'var(--bad)';
-    var word = band === 'strong' ? 'Strong' : band === 'fair' ? 'Fair' : 'Needs work';
-    return '<div class="dial"><svg viewBox="0 0 150 150" role="img" aria-label="' + label + ' ' + score + ' out of 100">' +
-      '<circle cx="75" cy="75" r="' + r + '" fill="none" stroke="var(--idle-bg)" stroke-width="11"/>' +
-      '<circle class="arc" cx="75" cy="75" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 75 75)"/>' +
-      '<text class="num" x="75" y="84" text-anchor="middle">' + score + '</text><text class="of" x="75" y="104" text-anchor="middle">' + label + ' / 100</text></svg>' +
-      '<span class="pill ' + (band === 'strong' ? 's-good' : band === 'fair' ? 's-warn' : 's-bad') + '">' + word + '</span></div>';
-  }
-
   function snippetHtml(code, note, heading) {
     return code ? (heading ? '<h3>' + heading + '</h3>' : '') + '<pre>' + esc(code) + '</pre>' + (note ? '<p class="small muted">' + note + '</p>' : '') : '';
   }
@@ -294,39 +324,153 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     }).join('') + '</div>';
   }
 
-  function fixItem(f, extra) {
-    var lv = LEVEL[f.level];
-    return '<li class="fix ' + (f.level === 'fix' ? 'fix-l' : f.level) + '"><div class="head"><strong>' + esc(f.title) + '</strong><span class="pill ' + lv[1] + '">' + lv[0] + '</span>' +
-      (extra.pill || '') + (f.lost && !extra.pill ? '<span class="small muted mono">-' + f.lost + ' pts</span>' : '') + '</div>' +
-      (extra.hideDetail ? '' : '<div class="muted small">' + esc(f.detail) + '</div>') +
-      '<div class="do">' + esc(f.fix) + '</div>' + (extra.hideSnippet ? '' : snippetHtml(f.snippet, esc(f.snippetNote))) +
-      '<div class="small">' + src(f.source) + '</div>' + (extra.after || '') + '</li>';
+  // ---------- insights: the fix list turned into actions ----------
+
+  function firstSentence(t) { var m = String(t).match(/^.*?[.!?](?=\s|$)/); return (m ? m[0] : String(t)).trim(); }
+  function afterFirst(t) { return String(t).slice(firstSentence(t).length).trim(); }
+  function union(a, b) { (b || []).forEach(function (x) { if (a.indexOf(x) < 0) a.push(x); }); return a; }
+  var ORDER = { blocker: 0, warning: 1, fix: 2, improve: 3 };
+
+  // Engine problems with the same remedy become one action; every other fix becomes its own.
+  function buildInsights(r, isSite) {
+    var out = [], merged = {};
+    // With no schema at all, "schema matches the page" is the same job as "add schema": show one action worth both.
+    var noSchema = r.fixes.filter(function (f) { return f.id === 'M2' && f.detail === 'Nothing to compare.'; })[0];
+    var addSchema = r.fixes.filter(function (f) { return f.id === 'M1'; })[0];
+    r.fixes.forEach(function (f) {
+      if (f.kind === 'covered') return; // already explained by a robots.txt outage
+      if (f === noSchema && addSchema) return;
+      if (f.kind === 'robots' || f.kind === 'firewall') {
+        var m = merged[f.kind];
+        if (!m) {
+          m = merged[f.kind] = { level: f.level, kind: f.kind, engines: [], bots: [], pages: [], finding: f.detail, source: f.source, lost: 0, siteWide: false };
+          out.push(m);
+        }
+        if (ORDER[f.level] < ORDER[m.level]) m.level = f.level;
+        union(m.engines, [SHORT[f.engine]]); union(m.bots, [f.bot]); union(m.pages, f.pages);
+        return;
+      }
+      out.push({ level: f.level, title: firstSentence(f.fix), more: afterFirst(f.fix), finding: isSite && !f.siteWide ? 'Check: ' + f.title : f.detail,
+        lost: (f.lost || 0) + (f === addSchema && noSchema ? noSchema.lost || 0 : 0), pages: f.pages || [], siteWide: !!f.siteWide, source: f.source,
+        snippet: isSite && !f.siteWide ? '' : f.snippet, snippetNote: f.snippetNote });
+    });
+    if (merged.robots) {
+      var allow = (r.robotsSnippet.match(/User-agent: (\S+)/g) || []).map(function (x) { return x.replace('User-agent: ', ''); });
+      merged.robots.title = 'Allow ' + list(allow.length ? allow : merged.robots.bots) + ' in robots.txt.';
+      merged.robots.more = 'Remove the bot from any group that disallows it. A bot with its own group ignores the * group, so copy across any Disallow lines you still want to apply.';
+      merged.robots.snippet = r.robotsSnippet;
+      merged.robots.unblocks = merged.robots.engines;
+    }
+    if (merged.firewall) {
+      merged.firewall.title = 'Let ' + list(merged.firewall.bots) + ' through your firewall or CDN.';
+      merged.firewall.more = 'Match on the user-agent and the operator\'s published IP ranges. The test request came from this tool, so confirm in your server logs.';
+      merged.firewall.unblocks = merged.firewall.engines;
+    }
+    return out;
   }
 
-  // Blocking problems and the next three are shown; the rest fold away.
-  function fixLists(fixes, render) {
-    var lead = fixes.filter(function (f) { return f.level === 'blocker'; }).length + 3;
-    var top = fixes.slice(0, lead), rest = fixes.slice(lead);
-    return '<ol class="fixes">' + top.map(render).join('') + '</ol>' +
-      (rest.length ? '<details class="more"><summary>Show ' + rest.length + ' more</summary><ol class="fixes" style="counter-reset: fix ' + top.length + '">' + rest.map(render).join('') + '</ol></details>' : '');
+  function insightItem(x, i, total) {
+    var lv = LEVEL[x.level], chips = '<span class="pill ' + lv[1] + '">' + lv[0] + '</span>';
+    if (x.unblocks) chips += '<span class="pill s-idle">Opens ' + esc(list(x.unblocks)) + '</span>';
+    if (total > 1) chips += '<span class="pill s-idle">' + (x.siteWide ? 'Whole site' : x.pages.length + ' of ' + total + ' pages') + '</span>';
+    if (x.lost) chips += '<span class="pill s-idle">+' + (total > 1 ? Math.round(x.lost / Math.max(1, x.pages.length)) + ' points a page' : x.lost + ' points') + '</span>';
+    return '<li class="insight ' + (x.level === 'blocker' ? 'i-bad' : x.level === 'improve' ? 'i-idle' : 'i-warn') + '"><span class="inum" aria-hidden="true">' + (i + 1) + '</span><div class="ibody">' +
+      '<h3>' + esc(x.title) + '</h3><div class="chips">' + chips + '</div>' +
+      '<p class="muted small">' + esc(x.finding) + '</p>' + (x.more ? '<p class="small">' + esc(x.more) + '</p>' : '') +
+      snippetHtml(x.snippet, esc(x.snippetNote || '')) +
+      (total > 1 && !x.siteWide && x.pages.length ? '<details class="affected"><summary>Pages affected</summary><ul>' + x.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>' : '') +
+      '<div class="small">' + src(x.source) + '</div></div></li>';
   }
 
-  // ---------- page report ----------
-
-  function summaryCard(r, which, heading) {
-    var v = pageVerdict(r);
-    return '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>' + heading + '</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' + actions(which) + '</div>' +
-      '<p class="verdict v-' + v[1] + '">' + esc(v[0]) + '</p>' +
-      '<div class="summary"><div>' + engineRows(r.engines) + '</div>' + dial(r.score, r.band, 'page score') + '</div>' +
-      (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode. The home page checks run only when you paste the home page.</p>' : '') +
-      '</section>';
+  // The blocking problems and the next three come first; the rest fold away below the dashboard.
+  function insightCards(r, isSite) {
+    var all = buildInsights(r, isSite), total = isSite ? r.pages.length : 1;
+    var lead = Math.min(5, all.filter(function (x) { return x.level === 'blocker'; }).length + 3);
+    var top = all.slice(0, lead), rest = all.slice(lead);
+    var gain = top.reduce(function (n, x) { return n + x.lost; }, 0) / total;
+    var after = Math.min(100, Math.round(r.score + gain));
+    var h = '<section class="card"><h2>Do these first</h2>';
+    if (!all.length) h += '<p>Nothing to fix. Every engine can reach ' + (isSite ? 'the pages audited' : 'this page') + ' and every check passed.</p>';
+    else {
+      h += '<p class="muted small">' + (after > r.score ? 'Doing ' + (top.length === 1 ? 'this' : 'these ' + top.length) + ' would lift the ' + (isSite ? 'average ' : '') + 'score from ' + r.score + ' to about ' + after + '. '
+        : '') + 'Problems that stop engines reaching the ' + (isSite ? 'site' : 'page') + ' come first.</p>' +
+        '<ol class="insights">' + top.map(function (x, i) { return insightItem(x, i, total); }).join('') + '</ol>';
+    }
+    h += '</section>';
+    var more = rest.length ? '<details class="card fold"><summary><h2>Everything else to fix <span class="count">' + rest.length + '</span></h2></summary>' +
+      '<ol class="insights">' + rest.map(function (x, i) { return insightItem(x, i + top.length, total); }).join('') + '</ol></details>' : '';
+    return { top: h, more: more };
   }
 
-  function fixCard(r) {
-    var h = '<section class="card"><h2>What to fix</h2>';
-    if (!r.fixes.length) return h + '<p>Nothing to fix. Every engine can reach this page and every check passed.</p></section>';
-    return h + '<p class="muted small">Problems that block engines come first, then checks by points lost.</p>' +
-      fixLists(r.fixes, function (f) { return fixItem(f, {}); }) + snippetHtml(r.robotsSnippet, ROBOTS_NOTE, 'Add to robots.txt') + '</section>';
+  // ---------- the summary dashboard ----------
+
+  function tile(label, value, unit, note, pill) {
+    return '<div class="tile"><div class="tlabel">' + label + '</div><div class="tvalue">' + value + (unit ? '<span class="tunit">' + unit + '</span>' : '') + '</div>' +
+      (pill ? '<span class="pill ' + pill[1] + '">' + pill[0] + '</span>' : '') + (note ? '<div class="tnote">' + note + '</div>' : '') + '</div>';
+  }
+  function bandPill(band) { return band === 'strong' ? ['Strong', 's-good'] : band === 'fair' ? ['Fair', 's-warn'] : ['Needs work', 's-bad']; }
+
+  function areaRows(areas) {
+    return '<div class="areas">' + areas.map(function (a) {
+      var shown = Math.round(a.earned * 10) / 10;
+      return '<div class="area"><span class="aname">' + esc(a.name) + '</span><span class="meter" title="' + esc(a.name) + ': ' + shown + ' of ' + a.max + ' points"><i style="width:' + (100 * a.earned / a.max) + '%"></i></span>' +
+        '<span class="avalue">' + shown + '<span class="muted">/' + a.max + '</span></span></div>';
+    }).join('') + '</div>';
+  }
+
+  function dashboard(r, isSite) {
+    var pages = isSite ? r.pages : null, n = isSite ? pages.length : 1;
+    var reports = isSite ? pages.map(function (p) { return p.report; }) : [r];
+    var blockers = buildInsights(r, isSite).filter(function (x) { return x.level === 'blocker'; }).length;
+    var open = isSite ? r.engines.filter(function (e) { return e.open === e.total; }).length : r.engines.filter(function (e) { return e.state === 'open'; }).length;
+    var unknown = !isSite && r.engines.every(function (e) { return e.state === 'unknown'; });
+
+    var areas = [], notes = [];
+    reports[0].groups.forEach(function (g, gi) {
+      if (g.unscored) {
+        var failing = {};
+        reports.forEach(function (rep) { rep.groups[gi].checks.forEach(function (c) { if (c.status === 'fail' || c.status === 'warn') failing[c.id] = true; }); });
+        var count = Object.keys(failing).length;
+        notes.push('<strong>' + esc(g.name) + '</strong>: ' + (count ? plural(count, 'issue') : 'no issues'));
+      } else {
+        areas.push({ name: g.name, max: g.max, earned: reports.reduce(function (sum, rep) { return sum + rep.groups[gi].earned; }, 0) / n });
+      }
+    });
+
+    var checks = reports[0].groups.reduce(function (all, g) { return all.concat(g.checks); }, []).filter(function (c) { return c.status !== 'na'; });
+    var passed = checks.filter(function (c) { return c.status === 'pass'; }).length;
+
+    var h = '<section class="card"><h2>Summary</h2><div class="tiles">' +
+      tile(isSite ? 'Average page score' : 'Page score', r.score, '/100', '', bandPill(r.band)) +
+      tile('Engines with full access', unknown ? '&ndash;' : open, unknown ? '' : ' of ' + r.engines.length, unknown ? 'Not checked without robots.txt' : isSite ? 'Reach every page audited' : 'Can reach this page', null) +
+      tile('Blocking problems', blockers, '', blockers ? 'Stop an engine using ' + (isSite ? 'pages' : 'the page') : 'None found', blockers ? ['Fix first', 's-bad'] : null) +
+      (isSite ? tile('Pages audited', n, '', r.errors.length ? plural(r.errors.length, 'page') + ' could not be fetched' : (r.sampled.source === 'sitemap' ? 'From the sitemap' : r.sampled.source === 'links' ? 'From links on the page' : 'No other pages found'), null)
+        : tile('Checks passed', passed, ' of ' + checks.length, 'Of the checks that apply', null)) +
+      '</div><div class="panels"><div class="panel"><h3>Engine access</h3>' + (isSite ? siteEngineRows(r) + exceptionsHtml(r) : engineRows(r.engines)) + '</div>' +
+      '<div class="panel"><h3>' + (isSite ? 'Average score by area' : 'Score by area') + '</h3>' + areaRows(areas) +
+      '<p class="small muted notscored">Not scored: ' + notes.join(' &middot; ') + '</p>';
+
+    if (isSite) {
+      var counts = { weak: 0, fair: 0, strong: 0 };
+      pages.forEach(function (p) { counts[p.band]++; });
+      var seg = [['weak', 'Needs work', 'var(--bad)'], ['fair', 'Fair', 'var(--warn)'], ['strong', 'Strong', 'var(--good)']];
+      h += '<h3 style="margin-top:6px">Pages by rating</h3><div class="split" role="img" aria-label="' + seg.map(function (s) { return counts[s[0]] + ' ' + s[1]; }).join(', ') + '">' +
+        seg.filter(function (s) { return counts[s[0]]; }).map(function (s) { return '<i title="' + s[1] + ': ' + plural(counts[s[0]], 'page') + '" style="flex:' + counts[s[0]] + ';background:' + s[2] + '"></i>'; }).join('') + '</div>' +
+        '<div class="legend">' + seg.map(function (s) { return '<span><i style="background:' + s[2] + '"></i>' + s[1] + ' <strong>' + counts[s[0]] + '</strong></span>'; }).join('') + '</div>';
+    }
+    h += '</div></div>';
+    if (!isSite && r.mode === 'paste') h += '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode. The home page checks run only when you paste the home page.</p>';
+    return h + '</section>';
+  }
+
+  function reportHead(r, which, heading, verdict, note) {
+    return '<div class="rhead"><div class="row" style="justify-content:space-between"><div><div class="eyebrow">' + heading + '</div><div class="mono rurl">' + esc(r.url) + '</div></div>' + actions(which) + '</div>' +
+      '<p class="verdict v-' + verdict[1] + '">' + esc(verdict[0]) + '</p>' + (note ? '<p class="small muted">' + note + '</p>' : '') + '</div>';
+  }
+
+  // Turns a plain card into one that folds, keeping its heading as the handle.
+  function fold(html, open) {
+    return html.replace(/<section class="card"><h2>(.*?)<\/h2>/g, '<details class="card fold"' + (open ? ' open' : '') + '><summary><h2>$1</h2></summary>').replace(/<\/section>/g, '</details>');
   }
 
   function checksCard(r) {
@@ -406,9 +550,11 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 
   function render(r, isSample) {
     shown = { page: r, site: null, detail: null };
+    var ins = insightCards(r, false);
     $('report').innerHTML =
-      (isSample ? '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes. Enter your own address above to audit a real page.</div>' : changesCard(r, 'page')) +
-      summaryCard(r, 'page', 'Summary') + fixCard(r) + checksCard(r) + siteWideCards(r);
+      (isSample ? '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes. Enter your own address above to audit a real page.</div>' : '') +
+      reportHead(r, 'page', 'Page report', pageVerdict(r), '') + (isSample ? '' : changesCard(r, 'page')) +
+      ins.top + dashboard(r, false) + ins.more + fold(checksCard(r) + siteWideCards(r), false);
     restoreChecklist();
   }
 
@@ -428,7 +574,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   function siteEngineRows(r) {
     return '<div class="engines">' + r.engines.map(function (e) {
       var pill = e.open === e.total ? ['Open', 's-good'] : e.open === 0 ? STATE[e.state] : ['Open on ' + e.open + ' of ' + e.total, 's-warn'];
-      var why = e.open === e.total ? '' : e.open === 0 ? e.example : '';
+      var why = e.open === 0 ? e.example : '';
       return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + pill[1] + '">' + pill[0] + '</span>' +
         (why ? '<span class="why">' + esc(why) + '</span>' : '') + '</div>';
     }).join('') + '</div>';
@@ -450,7 +596,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     return '<ul class="plain small exceptions">' + states.map(function (state) {
       var item = byState[state], urls = Object.keys(item.urls);
       return '<li><strong>' + STATE[state][0] + '</strong> on ' + plural(urls.length, 'page') + ', for ' + (item.engines.length === r.engines.length ? 'every engine' : esc(list(item.engines))) + ': ' +
-        urls.slice(0, 3).map(esc).join(', ') + (urls.length > 3 ? ' and ' + (urls.length - 3) + ' more' : '') + '. Open the page below for the reason.</li>';
+        urls.slice(0, 3).map(esc).join(', ') + (urls.length > 3 ? ' and ' + (urls.length - 3) + ' more' : '') + '</li>';
     }).join('') + '</ul>';
   }
 
@@ -460,7 +606,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     if (pagesView.sort !== 'none') rows.sort(function (a, b) { return pagesView.sort === 'asc' ? a.p.score - b.p.score : b.p.score - a.p.score; });
     if (!rows.length) return '<tr><td colspan="4" class="muted">No pages match.</td></tr>';
     return rows.map(function (x) {
-      var p = x.p, pill = p.band === 'strong' ? ['Strong', 's-good'] : p.band === 'fair' ? ['Fair', 's-warn'] : ['Needs work', 's-bad'];
+      var p = x.p, pill = bandPill(p.band);
       return '<tr><td><button class="link" type="button" data-page="' + x.i + '">' + esc(p.url) + '</button></td><td class="n">' + p.score + '</td>' +
         '<td><span class="pill ' + pill[1] + '">' + pill[0] + '</span></td><td class="n">' + p.issues + '</td></tr>';
     }).join('');
@@ -469,41 +615,24 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   function renderSite(r) {
     shown = { page: null, site: r, detail: null };
     pagesView = { sort: 'none', blockersOnly: false };
-    var n = r.pages.length, sm = r.sampled, v = siteVerdict(r);
-    var how = sm.source === 'none' ? 'No other pages were found in a sitemap or in the links on that page.'
+    var n = r.pages.length, sm = r.sampled;
+    var how = plural(n, 'page') + ' audited. ' + (sm.source === 'none' ? 'No other pages were found in a sitemap or in the links on that page.'
       : sm.source === 'sitemap' ? 'Pages come from the sitemap, which lists ' + sm.listed + ' addresses. Legal and account pages, translations, files and pages that robots.txt closes to all crawlers are skipped.'
-      : 'Pages come from the links on the page you entered, because no sitemap was found.';
+      : 'Pages come from the links on the page you entered, because no sitemap was found.');
     if (r.failed) how += ' The server stopped answering part way through, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
     else if (r.stopped) how += ' You stopped the audit early, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
     else if (sm.capped) how += ' The site has ' + sm.eligible + ' eligible pages; one audit covers ' + (n + r.errors.length) + ' of them, spread across its sections.';
+    how += ' The firewall test ran on the page you entered only.';
 
-    var h = changesCard(r, 'site') +
-      '<section class="card"><div class="row" style="justify-content:space-between"><div><h2>Site summary</h2><div class="small muted mono">' + esc(r.url) + '</div></div>' + actions('site') + '</div>' +
-      '<p class="verdict v-' + v[1] + '">' + esc(v[0]) + '</p>' +
-      '<div class="summary"><div>' + siteEngineRows(r) + exceptionsHtml(r) + '</div>' + dial(r.score, r.band, 'average score') + '</div>' +
-      '<p class="small muted"><strong>' + plural(n, 'page') + ' audited.</strong> ' + how +
-      (r.errors.length ? ' ' + plural(r.errors.length, 'page') + ' could not be fetched.' : '') + ' The firewall test ran on the page you entered only.</p></section>';
-
-    h += '<section class="card"><h2>What to fix across the site</h2>';
-    if (!r.fixes.length) h += '<p>Nothing to fix on the pages audited.</p>';
-    else {
-      h += '<p class="muted small">Problems that block engines come first, then the fixes that affect the most pages.</p>' + fixLists(r.fixes, function (f) {
-        return fixItem(f, {
-          pill: '<span class="pill s-idle">' + (f.siteWide ? 'Whole site' : f.pages.length + ' of ' + n + ' pages') + '</span>',
-          hideDetail: !f.siteWide, hideSnippet: !f.siteWide,
-          after: f.siteWide ? '' : '<details><summary>Pages affected</summary><ul>' + f.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>'
-        });
-      }) + snippetHtml(r.robotsSnippet, ROBOTS_NOTE, 'Add to robots.txt');
-    }
-    h += '</section>';
-
-    h += '<section class="card"><div class="row" style="justify-content:space-between"><h2>Pages</h2>' +
+    var ins = insightCards(r, true);
+    var pagesCard = '<section class="card"><div class="row" style="justify-content:space-between"><h2>Pages</h2>' +
       '<label class="check"><input type="checkbox" id="blockersOnly"> Only pages with blocking problems</label></div>' +
-      '<p class="muted small">Choose a page to see its full report.</p>' +
+      '<p class="muted small">Choose a page to see its own report.</p>' +
       '<div class="tablewrap"><table><thead><tr><th>Page</th><th><button class="link" type="button" id="sortScore" aria-label="Sort by score">Score <span id="sortMark" aria-hidden="true">&#8597;</span></button></th><th>Rating</th><th>Issues</th></tr></thead>' +
       '<tbody id="pageRows"></tbody></table></div></section>';
 
-    $('report').innerHTML = h + '<div id="detail"></div>' + siteWideCards(r);
+    $('report').innerHTML = reportHead(r, 'site', 'Site report', siteVerdict(r), how) + changesCard(r, 'site') +
+      ins.top + dashboard(r, true) + ins.more + pagesCard + '<div id="detail"></div>' + fold(siteWideCards(r), false);
     $('pageRows').innerHTML = pageRows();
     restoreChecklist();
   }
@@ -511,7 +640,8 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   function showDetail(i) {
     var r = shown.site.pages[i].report;
     shown.detail = r;
-    $('detail').innerHTML = summaryCard(r, 'detail', 'Page report') + fixCard(r) + checksCard(r);
+    var ins = insightCards(r, false);
+    $('detail').innerHTML = reportHead(r, 'detail', 'Page report', pageVerdict(r), '') + ins.top + dashboard(r, false) + ins.more + fold(checksCard(r), false);
     $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

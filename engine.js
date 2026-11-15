@@ -562,10 +562,12 @@
       if (e.state === 'open' || e.state === 'unknown') return;
       e.bots.forEach(function (b) { if (b.robots === 'disallowed' && !robotsUnreachable && toAllow.indexOf(b.token) < 0) toAllow.push(b.token); });
       if (e.state === 'blocked' || e.state === 'firewall') {
-        fixes.push({ level: 'blocker', title: e.name + ' cannot reach this page', detail: e.reason,
+        fixes.push({ level: 'blocker', title: e.name + ' cannot reach this page', detail: e.reason, engine: e.id, bot: e.bots[0].token,
+          kind: robotsUnreachable ? 'covered' : e.state === 'firewall' ? 'firewall' : 'robots',
           fix: e.state === 'firewall' ? 'Allow this bot in your firewall or CDN. Match on user-agent and the operator\'s published IP ranges.' : 'Allow the bot in robots.txt. A snippet is below.', source: e.source });
       } else if (e.state === 'partial') {
-        fixes.push({ level: 'warning', title: e.name + ' is only partly open', detail: e.reason, fix: 'Allow the user-fetch agent if you want people to be able to pull this page into answers.', source: e.source });
+        fixes.push({ level: 'warning', title: e.name + ' is only partly open', detail: e.reason, engine: e.id, bot: e.bots[1] ? e.bots[1].token : e.bots[0].token,
+          kind: e.bots[1] && e.bots[1].robots === 'disallowed' ? 'robots' : 'firewall', fix: 'Allow the user-fetch agent if you want people to be able to pull this page into answers.', source: e.source });
       }
     });
     var robotsSnippet = toAllow.length ? toAllow.map(function (t) { return 'User-agent: ' + t + '\nAllow: /'; }).join('\n\n') : '';
@@ -659,7 +661,7 @@
         var key = f.id || f.title, item = byKey[key];
         if (!item) {
           item = byKey[key] = { id: f.id, level: f.level, title: f.title.replace(' this page', ' some pages'), detail: f.detail, fix: f.fix,
-            source: f.source, lost: 0, pages: [], snippet: f.snippet || '', snippetNote: f.snippetNote || '', siteWide: SITE_WIDE.indexOf(f.id) >= 0 || /^robots\.txt returns/.test(f.title) };
+            source: f.source, lost: 0, pages: [], kind: f.kind, engine: f.engine, bot: f.bot, snippet: f.snippet || '', snippetNote: f.snippetNote || '', siteWide: SITE_WIDE.indexOf(f.id) >= 0 || /^robots\.txt returns/.test(f.title) };
           fixes.push(item);
         }
         if (order[f.level] < order[item.level]) item.level = f.level;
