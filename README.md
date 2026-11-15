@@ -20,7 +20,7 @@ Paste-only copy: https://bharatisaket.github.io/ai-searchability/
 
 The hosted app runs in **paste mode**: enter the page URL, paste the page source and the site's `robots.txt`, and run the audit. It cannot fetch websites itself, so the firewall test and sitemap lookup are skipped.
 
-Each report opens with a one-sentence verdict, then **Do these first** (the few actions that matter most, with what each one opens up or adds to the score), then a **Summary** dashboard of score, engine access and score by area. The full check list and remaining fixes fold away underneath.
+Each report opens with the score and a one-sentence verdict. Below that, **Fix first** lists the few actions that matter most, with what each one opens up or adds to the score; blocking problems are expanded and the rest open on click. **Engine access** and **Score by area** sit alongside. Remaining fixes, the full check list and reference notes fold away underneath.
 
 Reports can be shared: after a live audit the address bar holds a link that reruns the same audit when opened. The app also remembers the last report for each address in your browser and shows what changed when you audit it again.
 

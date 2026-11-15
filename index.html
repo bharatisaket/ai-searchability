@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Quotable AI Search Audit</title>
+<title>Quotable: AI search audit</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f4fd8'/%3E%3Cpath d='M9 21v-5a5 5 0 0 1 5-5v3a2 2 0 0 0-2 2h2v5zm9 0v-5a5 5 0 0 1 5-5v3a2 2 0 0 0-2 2h2v5z' fill='white'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* Layout idea: one reading column; summary (score + engines) first, then fixes, then evidence. */
+/*
+  Type: 12 / 13 / 15 / 18 / 24 / 32, weights 400 / 500 / 600. Display face only for the wordmark, the landing headline, the verdict and the score.
+  Space: 4 / 8 / 12 / 16 / 24 / 32 / 48.
+  Containers: one card style (soft border, small shadow). Nothing inside a card has its own box.
+  Colour: accent is for actions and focus only. Good / warn / bad carry results.
+*/
 :root {
-  --paper: #f3f5f8;
-  --card: #ffffff;
-  --ink: #131a26;
-  --muted: #566176;
-  --line: #d8dee8;
-  --accent: #1f4fd8;
-  --accent-ink: #ffffff;
-  --good: #14784a;  --good-bg: #e2f3ea;
-  --warn: #96590a;  --warn-bg: #fbefd9;
-  --bad: #b3312a;   --bad-bg: #fbe6e3;
-  --idle: #566176;  --idle-bg: #e8ecf2;
+  --paper: #f4f6f9; --card: #ffffff; --ink: #131a26; --muted: #566176; --line: #e3e7ee; --field: #c3ccd9; --tint: #f4f6f9;
+  --btn: #1f4fd8; --btn-hover: #1a43b8; --btn-ink: #ffffff; --link: #1f4fd8; --ring: rgba(31, 79, 216, 0.22);
+  --good: #14784a; --good-bg: #e2f3ea; --warn: #8a5208; --warn-bg: #fbefd9; --warn-mark: #d98a00;
+  --bad: #b3312a; --bad-bg: #fbe6e3; --idle: #566176; --idle-bg: #e8ecf2;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
   --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -27,193 +27,300 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0f141d; --card: #171e2a; --ink: #e8ecf3; --muted: #9aa6ba; --line: #2a3445;
-    --accent: #7ea2ff; --accent-ink: #0b1220;
-    --good: #5fd39a; --good-bg: #12301f; --warn: #f0b860; --warn-bg: #3a2a0c;
+    --paper: #0d121a; --card: #171e2a; --ink: #e8ecf3; --muted: #9aa6ba; --line: #283244; --field: #3a475c; --tint: #1e2735;
+    --btn: #3b6cf0; --btn-hover: #5580f5; --btn-ink: #ffffff; --link: #8fb0ff; --ring: rgba(126, 162, 255, 0.3);
+    --good: #5fd39a; --good-bg: #12301f; --warn: #f0b860; --warn-bg: #3a2a0c; --warn-mark: #f0a92e;
     --bad: #ff8f86; --bad-bg: #3d1614; --idle: #9aa6ba; --idle-bg: #222b3a;
-    color-scheme: dark;
+    --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0f141d; --card: #171e2a; --ink: #e8ecf3; --muted: #9aa6ba; --line: #2a3445;
-  --accent: #7ea2ff; --accent-ink: #0b1220;
-  --good: #5fd39a; --good-bg: #12301f; --warn: #f0b860; --warn-bg: #3a2a0c;
+  --paper: #0d121a; --card: #171e2a; --ink: #e8ecf3; --muted: #9aa6ba; --line: #283244; --field: #3a475c; --tint: #1e2735;
+  --btn: #3b6cf0; --btn-hover: #5580f5; --btn-ink: #ffffff; --link: #8fb0ff; --ring: rgba(126, 162, 255, 0.3);
+  --good: #5fd39a; --good-bg: #12301f; --warn: #f0b860; --warn-bg: #3a2a0c; --warn-mark: #f0a92e;
   --bad: #ff8f86; --bad-bg: #3d1614; --idle: #9aa6ba; --idle-bg: #222b3a;
-  color-scheme: dark;
+  --shadow: none; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { background: var(--paper); color: var(--ink); font: 400 16px/1.55 var(--body); }
-.wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 64px; display: flex; flex-direction: column; gap: 22px; }
-h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.15; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
-h2 { font-size: 21px; font-weight: 600; }
-h3 { font-size: 16px; font-weight: 600; font-family: var(--body); }
-p { margin: 0; }
-a { color: var(--accent); }
-code, .mono { font-family: var(--mono); font-size: 0.86em; }
+body { background: var(--paper); color: var(--ink); font: 400 15px/1.55 var(--body); }
+h1, h2, h3, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+strong, b { font-weight: 600; }
+a { color: var(--link); }
+h2 { font: 600 18px/1.3 var(--body); }
+h3 { font: 600 15px/1.4 var(--body); }
+code, pre, .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
-.small { font-size: 13.5px; }
-header.top { display: flex; flex-direction: column; gap: 6px; }
-header.top p { color: var(--muted); max-width: 62ch; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-label { font-weight: 500; font-size: 14px; }
-input[type="url"], input[type="text"], textarea {
-  width: 100%; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line);
-  border-radius: 8px; padding: 10px 12px;
-}
-textarea { font-family: var(--mono); font-size: 13px; min-height: 110px; resize: vertical; }
-input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.grow { flex: 1 1 260px; }
-button { font: 500 15px var(--body); border-radius: 8px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-button:disabled { opacity: 0.6; cursor: wait; }
-.field { display: flex; flex-direction: column; gap: 6px; }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.notice { border-left: 3px solid var(--accent); background: var(--idle-bg); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14.5px; }
-.notice.err { border-color: var(--bad); background: var(--bad-bg); }
-.pill { display: inline-block; font: 500 12.5px var(--body); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
-.s-good { color: var(--good); background: var(--good-bg); }
-.s-warn { color: var(--warn); background: var(--warn-bg); }
-.s-bad { color: var(--bad); background: var(--bad-bg); }
-.s-idle { color: var(--idle); background: var(--idle-bg); }
-.summary { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; }
-.verdict { font: 600 24px/1.25 var(--display); text-wrap: balance; padding-left: 14px; border-left: 4px solid var(--idle); }
-.rhead { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 0; }
-.eyebrow { font: 500 12.5px var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.rurl { overflow-wrap: anywhere; }
-.insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.insight { display: grid; grid-template-columns: 30px 1fr; gap: 12px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px; padding: 14px; }
-.insight.i-bad { border-left-color: var(--bad); } .insight.i-warn { border-left-color: var(--warn); } .insight.i-idle { border-left-color: var(--idle); }
-.inum { width: 28px; height: 28px; border-radius: 50%; background: var(--idle-bg); color: var(--ink); font: 600 14px var(--body); display: grid; place-items: center; font-variant-numeric: tabular-nums; }
-.ibody { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.ibody h3 { font-size: 16.5px; line-height: 1.35; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.affected summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
-.affected ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; overflow-wrap: anywhere; }
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.tile { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.tlabel { font-size: 13px; color: var(--muted); }
-.tvalue { font: 700 32px/1.1 var(--display); font-variant-numeric: tabular-nums; }
-.tunit { font: 500 14px var(--body); color: var(--muted); margin-left: 2px; }
-.tnote { font-size: 12.5px; color: var(--muted); }
-.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
-.panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.areas { display: flex; flex-direction: column; gap: 9px; }
-.area { display: grid; grid-template-columns: 128px 1fr 58px; gap: 10px; align-items: center; font-size: 14.5px; }
-.meter { height: 8px; background: var(--idle-bg); border-radius: 4px; overflow: hidden; }
-.meter i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
-.avalue { text-align: right; font: 13.5px var(--mono); font-variant-numeric: tabular-nums; }
-.notscored { margin-top: 2px; }
-.split { display: flex; gap: 2px; height: 10px; }
-.split i { display: block; border-radius: 3px; min-width: 6px; }
-.legend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13.5px; color: var(--muted); }
-.legend span { display: inline-flex; gap: 6px; align-items: center; }
-.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.legend strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
-details.fold > summary::-webkit-details-marker { display: none; }
-details.fold > summary::before { content: "+"; font: 500 18px var(--mono); color: var(--muted); width: 14px; }
-details.fold[open] > summary::before { content: "-"; }
-details.fold > summary h2 { font-size: 18px; }
-.count { font: 500 13px var(--body); color: var(--muted); background: var(--idle-bg); border-radius: 999px; padding: 2px 9px; vertical-align: middle; }
-.changes { gap: 8px; }
-.verdict.v-bad { border-color: var(--bad); } .verdict.v-warn { border-color: var(--warn); } .verdict.v-good { border-color: var(--good); }
-.exceptions { margin-top: 12px; overflow-wrap: anywhere; }
-.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-.steps li { display: flex; gap: 9px; align-items: baseline; color: var(--muted); }
-.steps li.done { color: var(--ink); }
-.steps .mark { width: 1.1em; text-align: center; font-family: var(--mono); }
-.steps li.done .mark { color: var(--good); }
-.steps li.bad .mark { color: var(--bad); }
-details.more { margin-top: 2px; }
-details.more > summary { cursor: pointer; color: var(--accent); font-weight: 500; padding: 6px 0; }
-details.more[open] > summary { margin-bottom: 8px; }
-.fix pre { margin: 4px 0; }
-label.check { font-weight: 400; display: flex; gap: 7px; align-items: center; }
-label.check input { accent-color: var(--accent); }
-.intro ul.plain { gap: 10px; }
-th button.link { color: inherit; text-decoration: none; font-size: inherit; }
-.dial { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
-.dial svg { width: 150px; height: 150px; }
-.dial .num { font: 700 44px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
-.dial .of { font: 500 12px var(--body); fill: var(--muted); }
-.engines { display: flex; flex-direction: column; }
-.engine { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 11px 0; border-top: 1px solid var(--line); }
-.engine:first-child { border-top: 0; padding-top: 0; }
-.engine .why { grid-column: 1 / -1; color: var(--muted); font-size: 14px; }
-.engine .name { font-weight: 600; }
-.fixes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: fix; }
-.fix { counter-increment: fix; border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
-.fix.blocker { border-left-color: var(--bad); }
-.fix.warning, .fix.fix-l { border-left-color: var(--warn); }
-.fix.improve { border-left-color: var(--idle); }
-.fix .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.fix .head strong::before { content: counter(fix) ". "; color: var(--muted); font-variant-numeric: tabular-nums; }
-.fix .do { font-size: 15px; }
-pre { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font: 13px/1.5 var(--mono); }
-details.group { border-top: 1px solid var(--line); padding: 12px 0 2px; }
-details.group:first-of-type { border-top: 0; }
-details.group summary { cursor: pointer; display: grid; grid-template-columns: 1fr 120px 64px; gap: 12px; align-items: center; list-style: none; }
-details.group summary::-webkit-details-marker { display: none; }
-details.group summary .gname::before { content: "+ "; color: var(--muted); font-family: var(--mono); }
-details.group[open] summary .gname::before { content: "- "; }
-.bar { height: 8px; background: var(--idle-bg); border-radius: 4px; overflow: hidden; }
-.bar i { display: block; height: 100%; background: var(--accent); }
-.pts { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13.5px; }
-.tablewrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin-top: 10px; }
-th, td { text-align: left; padding: 8px 10px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
-th { font-weight: 500; color: var(--muted); font-size: 13px; border-top: 0; }
-td.n { font-family: var(--mono); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.checks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
-.checks label { font-weight: 400; font-size: 15px; display: flex; gap: 10px; align-items: flex-start; }
-.checks input { margin-top: 5px; accent-color: var(--accent); }
-ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
-footer { color: var(--muted); font-size: 13.5px; }
-footer ul { margin: 6px 0 0; padding-left: 18px; columns: 2; column-gap: 28px; }
+.small { font-size: 13px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.scope { border: 0; padding: 0; margin: 0; display: flex; gap: 6px 20px; flex-wrap: wrap; }
-.scope label { font-weight: 400; font-size: 15px; display: flex; gap: 7px; align-items: center; }
-.scope input { accent-color: var(--accent); }
-button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; text-align: left; overflow-wrap: anywhere; }
-.fix details summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
-.fix details ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; overflow-wrap: anywhere; }
-#detail { display: flex; flex-direction: column; gap: 22px; }
-#detail:empty { display: none; }
-#report { display: flex; flex-direction: column; gap: 22px; }
-@media (max-width: 640px) {
-  .summary, .two, .panels { grid-template-columns: 1fr; }
-  .tiles { grid-template-columns: 1fr 1fr; }
-  .verdict { font-size: 20px; }
-  details.group summary { grid-template-columns: 1fr 70px 56px; }
-  footer ul { columns: 1; }
-  h1 { font-size: 25px; }
+.num { font-variant-numeric: tabular-nums; }
+.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 16px 24px 48px; display: flex; flex-direction: column; gap: 24px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 24px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+
+/* top bar and landing */
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font: 700 18px var(--display); color: var(--ink); text-decoration: none; background: none; border: 0; padding: 4px 0; cursor: pointer; }
+.brand i { width: 24px; height: 24px; border-radius: 6px; background: var(--btn); display: grid; place-items: center; }
+.brand i svg { width: 14px; height: 14px; fill: #fff; }
+.lead { max-width: 720px; margin: 24px auto 0; text-align: center; display: flex; flex-direction: column; gap: 12px; }
+.lead h1 { font: 700 32px/1.15 var(--display); letter-spacing: -0.01em; text-wrap: balance; }
+.lead p { color: var(--muted); font-size: 18px; line-height: 1.45; text-wrap: balance; }
+.has-report .lead, .has-report .points { display: none; }
+.formcard { max-width: 760px; width: 100%; margin: 0 auto; padding: 16px; }
+.has-report .formcard { max-width: none; }
+
+/* form */
+.audit { display: flex; flex-direction: column; gap: 8px; }
+.audit > label { font-weight: 500; font-size: 13px; color: var(--muted); }
+.bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+input[type="url"], textarea { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--field); border-radius: 8px; padding: 0 12px; }
+#url { flex: 1 1 260px; height: 44px; min-width: 0; }
+input[type="url"]:focus, textarea:focus { outline: none; border-color: var(--link); box-shadow: 0 0 0 3px var(--ring); }
+input[aria-invalid="true"] { border-color: var(--bad); }
+textarea { width: 100%; padding: 8px 12px; font: 13px/1.5 var(--mono); min-height: 112px; resize: vertical; }
+.seg { display: inline-flex; background: var(--tint); border: 1px solid var(--line); border-radius: 8px; padding: 3px; height: 44px; }
+.seg label { position: relative; display: flex; }
+.seg input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
+.seg span { display: flex; align-items: center; padding: 0 12px; border-radius: 6px; font-weight: 500; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.seg input:checked + span { background: var(--card); color: var(--ink); box-shadow: var(--shadow), 0 0 0 1px var(--line); }
+.seg input:focus-visible + span { outline: 2px solid var(--link); outline-offset: 1px; }
+.hint { font-size: 13px; color: var(--muted); }
+.ferr { font-size: 13px; color: var(--bad); font-weight: 500; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-weight: 500; font-size: 13px; }
+
+/* buttons */
+button { font: 500 15px var(--body); border-radius: 8px; cursor: pointer; border: 1px solid var(--field); background: var(--card); color: var(--ink); padding: 0 16px; height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.12s, border-color 0.12s; }
+button:hover { background: var(--tint); }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); height: 44px; min-width: 116px; }
+button.primary:hover { background: var(--btn-hover); border-color: var(--btn-hover); }
+button:disabled { cursor: wait; opacity: 0.75; }
+button.ghost { height: 32px; padding: 0 12px; font-size: 13px; border-color: var(--line); color: var(--muted); }
+button.ghost:hover { color: var(--ink); }
+button.text { border: 0; background: none; padding: 0; height: auto; color: var(--link); font-size: inherit; }
+button.text:hover { text-decoration: underline; background: none; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; flex: none; opacity: 0.8; }
+@media (prefers-reduced-motion: no-preference) { .spin { animation: spin 0.8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } }
+
+/* landing points */
+.points { max-width: 760px; width: 100%; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.point { display: flex; flex-direction: column; gap: 4px; }
+.point .pi { width: 32px; height: 32px; border-radius: 8px; background: var(--idle-bg); display: grid; place-items: center; color: var(--ink); margin-bottom: 4px; }
+.point p { color: var(--muted); font-size: 13px; }
+.tryline { text-align: center; font-size: 13px; color: var(--muted); }
+
+/* progress */
+.progress { max-width: 760px; width: 100%; margin: 0 auto; }
+.has-report .progress { max-width: none; }
+.phead { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; margin-bottom: 12px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px 24px; }
+.steps li { display: flex; gap: 8px; align-items: center; color: var(--muted); min-height: 24px; }
+.steps li.done { color: var(--ink); }
+.steps li.done .ic { color: var(--good); }
+.steps li.bad .ic { color: var(--bad); }
+.track { height: 6px; background: var(--idle-bg); border-radius: 3px; overflow: hidden; }
+.track i { display: block; height: 100%; background: var(--btn); border-radius: 3px; transition: width 0.3s; }
+.stale { opacity: 0.4; pointer-events: none; }
+.banner { background: var(--idle-bg); border-radius: 8px; padding: 8px 12px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tag { font: 500 12px var(--body); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+
+/* report */
+#report { display: flex; flex-direction: column; gap: 24px; }
+#report:empty, #msg:empty { display: none; }
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 24px; align-items: center; }
+.hero:focus { outline: none; }
+.ringbox { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.ringbox svg { width: 104px; height: 104px; }
+.ringbox text.n { font: 700 32px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
+.ringbox text.of { font: 500 12px var(--body); fill: var(--muted); }
+.band { font: 600 13px var(--body); }
+.t-good { color: var(--good); } .t-warn { color: var(--warn); } .t-bad { color: var(--bad); } .t-idle { color: var(--muted); }
+.eyebrow { font: 500 12px var(--body); color: var(--muted); }
+.verdict { font: 600 28px/1.2 var(--display); text-wrap: balance; margin: 4px 0 8px; }
+.hurl { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.hnote { font-size: 13px; color: var(--muted); margin-top: 8px; max-width: 70ch; }
+.hact { display: flex; flex-direction: column; gap: 8px; align-self: start; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 344px; gap: 24px; align-items: start; }
+.main, .rail { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.rail { position: sticky; top: 16px; }
+.chead { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 4px; flex-wrap: wrap; }
+.gain { font-weight: 600; white-space: nowrap; }
+.gain span { font-weight: 400; color: var(--muted); font-size: 13px; margin-right: 8px; }
+.sub { color: var(--muted); font-size: 13px; }
+
+/* one disclosure style everywhere */
+summary { cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+.chev { color: var(--muted); transition: transform 0.15s; }
+details[open] > summary > .chev, details[open] > summary .chev.own { transform: rotate(90deg); }
+
+/* fix rows */
+.fixlist > li { border-top: 1px solid var(--line); }
+.fixlist > li:first-child { border-top: 0; }
+.fx > summary { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 16px; gap: 12px; align-items: center; padding: 12px 8px; margin: 0 -8px; border-radius: 8px; }
+.fx > summary:hover { background: var(--tint); }
+.fxn { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 600 13px var(--body); font-variant-numeric: tabular-nums; border: 1.5px solid var(--field); color: var(--muted); }
+.sev-blocker .fxn { background: var(--bad); border-color: var(--bad); color: #fff; }
+.sev-fix .fxn { border-color: var(--warn-mark); color: var(--warn); }
+.fxtitle { font-weight: 600; display: block; }
+.fxmeta { font-size: 13px; color: var(--muted); display: block; }
+.fxmeta b { font-weight: 500; }
+.sev-blocker .fxmeta b { color: var(--bad); } .sev-fix .fxmeta b { color: var(--warn); }
+.fximpact { font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--muted); }
+.fxbody { padding: 0 0 16px 40px; display: flex; flex-direction: column; gap: 12px; }
+.found { background: var(--tint); border-radius: 8px; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+.found b { font-weight: 500; color: var(--muted); margin-right: 4px; }
+.code { position: relative; }
+.code pre { margin: 0; background: var(--tint); border-radius: 8px; padding: 12px 48px 12px 12px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+.code button { position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; padding: 0; border-color: transparent; background: none; color: var(--muted); }
+.code button:hover { background: var(--card); color: var(--ink); }
+.fxfoot { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.srclink { color: var(--muted); display: inline-flex; gap: 4px; align-items: center; text-decoration: none; }
+.srclink:hover { color: var(--ink); text-decoration: underline; }
+.srclink .ic { width: 13px; height: 13px; }
+.affected > summary { font-size: 13px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; }
+.affected ul { margin-top: 8px; font: 13px/1.6 var(--mono); overflow-wrap: anywhere; color: var(--muted); }
+
+/* rail panels */
+.englist li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.englist li:first-child { border-top: 0; padding-top: 0; }
+.englist .ename { font-weight: 500; }
+.englist .estate { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.englist .ewhy { grid-column: 2 / -1; font-size: 13px; color: var(--muted); }
+.notes { margin-top: 12px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.areas { display: flex; flex-direction: column; gap: 4px; }
+.area { display: grid; grid-template-columns: minmax(0, 1fr) 96px 48px; gap: 12px; align-items: center; border: 0; background: none; padding: 4px 8px; margin: 0 -8px; height: auto; border-radius: 6px; font: inherit; color: inherit; text-align: left; justify-content: stretch; }
+.area:hover { background: var(--tint); }
+.meter { height: 6px; background: var(--idle-bg); border-radius: 3px; overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 3px; min-width: 3px; }
+.f-good { background: var(--good); } .f-warn { background: var(--warn-mark); } .f-bad { background: var(--bad); }
+.aval { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+.aval span { color: var(--muted); }
+.area.flat { grid-template-columns: minmax(0, 1fr) auto; }
+.astate { text-align: right; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.split { display: flex; gap: 2px; height: 8px; margin: 4px 0 8px; }
+.split i { display: block; border-radius: 3px; min-width: 6px; }
+.legend { display: flex; gap: 4px 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend i { width: 8px; height: 8px; border-radius: 2px; }
+.legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* more detail */
+.more { padding: 8px 24px; }
+.more > details { border-top: 1px solid var(--line); }
+.more > details:first-of-type { border-top: 0; }
+.more > details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; gap: 16px; align-items: center; padding: 16px 24px; margin: 0 -24px; min-height: 56px; }
+.more > details > summary:hover { background: var(--tint); }
+.more > details > summary h2 { font-size: 15px; }
+.more .sum { font-size: 13px; color: var(--muted); text-align: right; }
+.more .body { padding: 0 0 24px; display: flex; flex-direction: column; gap: 12px; }
+.pill { display: inline-block; font: 500 12px var(--body); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.p-pass { color: var(--good); background: var(--good-bg); } .p-warn { color: var(--warn); background: var(--warn-bg); }
+.p-fail { color: var(--bad); background: var(--bad-bg); } .p-na { color: var(--idle); background: var(--idle-bg); }
+.ckrow, .ckhead, .ckgroup > summary { display: grid; grid-template-columns: minmax(0, 1fr) 112px 72px; gap: 16px; align-items: start; }
+.ckhead { font-size: 12px; color: var(--muted); padding-bottom: 4px; }
+.ckhead span:last-child, .ckpts { text-align: right; }
+.ckgroup { border-top: 1px solid var(--line); }
+.ckgroup > summary { align-items: center; padding: 12px 0; }
+.ckgroup > summary .gn { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.ckrow { padding: 8px 0 8px 24px; border-top: 1px solid var(--line); }
+.ckrow .d { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.ckpts { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px 16px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); font-size: 12px; border-top: 0; white-space: nowrap; }
+td.r, th.r { text-align: right; padding-right: 0; }
+.checks { display: flex; flex-direction: column; gap: 12px; }
+.checks label { display: flex; gap: 12px; align-items: flex-start; }
+.checks input { margin-top: 4px; accent-color: var(--btn); width: 16px; height: 16px; flex: none; }
+ul.plain { display: flex; flex-direction: column; gap: 8px; padding-left: 16px; list-style: disc; }
+
+/* pages table */
+.pages th button { font: inherit; color: inherit; border: 0; background: none; padding: 0; height: auto; gap: 4px; }
+.pages th button:hover { color: var(--ink); background: none; }
+.pages tbody tr { cursor: pointer; }
+.pages tbody tr:hover { background: var(--tint); }
+.pages td { vertical-align: middle; }
+.pages td:first-child { padding-left: 8px; }
+.pages .path { font: 500 13px var(--mono); color: var(--ink); border: 0; background: none; padding: 0; height: auto; text-align: left; overflow-wrap: anywhere; justify-content: flex-start; }
+.scorecell { display: inline-flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.scorecell .meter { width: 48px; }
+.toggle[aria-pressed="true"] { background: var(--idle-bg); color: var(--ink); border-color: var(--field); }
+.changes p + p { margin-top: 4px; }
+
+/* footer */
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 24px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+footer details summary { color: var(--link); display: inline-flex; gap: 4px; align-items: center; }
+footer ul { margin-top: 8px; columns: 2; column-gap: 32px; }
+footer li { padding: 2px 0; }
+
+@media (max-width: 900px) {
+  .cols { grid-template-columns: 1fr; }
+  .rail { position: static; order: -1; display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .hero { grid-template-columns: auto minmax(0, 1fr); }
+  .hact { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: no-preference) { .dial circle.arc { transition: stroke-dashoffset 0.6s ease; } }
+@media (max-width: 640px) {
+  .wrap { padding: 12px 16px 32px; gap: 16px; }
+  .card { padding: 16px; }
+  .lead h1 { font-size: 24px; } .lead p { font-size: 15px; }
+  .verdict { font-size: 24px; }
+  .hero { grid-template-columns: 1fr; gap: 16px; }
+  .rail { grid-template-columns: 1fr; }
+  .ringbox { flex-direction: row; gap: 16px; justify-content: flex-start; text-align: left; }
+  .ringbox svg { width: 80px; height: 80px; }
+  .points, .two { grid-template-columns: 1fr; gap: 16px; }
+  .bar > * { flex: 1 1 100%; }
+  .seg label { flex: 1; } .seg span { flex: 1; justify-content: center; }
+  .fx > summary { grid-template-columns: 28px minmax(0, 1fr) 16px; }
+  .fximpact { grid-column: 2; grid-row: 2; }
+  .fx > summary > .chev { grid-column: 3; grid-row: 1; }
+  .fxbody { padding-left: 0; }
+  .more { padding: 4px 16px; }
+  .more > details > summary { padding: 12px 16px; margin: 0 -16px; grid-template-columns: minmax(0, 1fr) 16px; }
+  .more .sum { grid-column: 1; grid-row: 2; text-align: left; }
+  .more > details > summary > .chev { grid-column: 2; grid-row: 1; }
+  .ckrow, .ckhead, .ckgroup > summary { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .ckhead span:nth-child(2) { display: none; }
+  .ckrow .ckpts, .ckgroup > summary .ckpts { grid-column: 2; }
+  .ckgroup > summary .meter { display: none; }
+  .ckrow { padding-left: 0; }
+  footer ul { columns: 1; }
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header class="top">
-    <h1>Quotable</h1>
-    <p>Check whether AI search engines can reach a page and quote it. Every finding cites the engine's own documentation.</p>
+  <header class="topbar">
+    <button class="brand" id="home" type="button" aria-label="Quotable, start over"><i><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1 11V7a4 4 0 0 1 4-4v2a2 2 0 0 0-2 2h2v4zm7 0V7a4 4 0 0 1 4-4v2a2 2 0 0 0-2 2h2v4z"/></svg></i>Quotable</button>
   </header>
 
-  <section class="card" aria-label="Run an audit">
-    <form id="form" class="field" novalidate>
-      <label for="url">Page URL</label>
-      <div class="row">
-        <input class="grow" id="url" type="url" inputmode="url" placeholder="https://example.com/pricing" autocomplete="url">
+  <div class="lead">
+    <h1>Can AI search engines read your page?</h1>
+    <p>Check whether ChatGPT, Claude, Perplexity, Copilot and Google's AI features can reach a page and quote it.</p>
+  </div>
+
+  <section class="card formcard" aria-label="Run an audit">
+    <form id="form" class="audit" novalidate>
+      <label for="url">Web address</label>
+      <div class="bar">
+        <input id="url" type="url" inputmode="url" placeholder="https://example.com/pricing" autocomplete="url" aria-describedby="fieldError">
+        <div class="seg" id="scope" role="radiogroup" aria-label="What to audit" hidden>
+          <label><input type="radio" name="scope" value="page" checked><span>This page</span></label>
+          <label><input type="radio" name="scope" value="site"><span>Whole site</span></label>
+        </div>
         <button class="primary" id="run" type="submit">Run audit</button>
       </div>
-      <fieldset id="scope" class="scope" hidden>
-        <legend class="sr">What to audit</legend>
-        <label><input type="radio" name="scope" value="page" checked> This page</label>
-        <label><input type="radio" name="scope" value="site"> Whole site</label>
-      </fieldset>
-      <div id="modeNote" class="small muted"></div>
+      <p id="fieldError" class="ferr" role="alert" hidden></p>
+      <p id="modeNote" class="hint"></p>
       <div id="paste" hidden>
         <div class="two">
           <div class="field">
@@ -227,15 +334,23 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
         </div>
       </div>
     </form>
-    <div id="msg" role="status" aria-live="polite"></div>
   </section>
+
+  <div id="msg" role="status" aria-live="polite"></div>
+
+  <div class="points" id="points">
+    <div class="point"><span class="pi"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></span><h3>Which engines can get in</h3><p>Each engine checked against your robots.txt, firewall and index settings.</p></div>
+    <div class="point"><span class="pi"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 13h12M4 13V8M8 13V3M12 13V6"/></svg></span><h3>A score out of 100</h3><p>How easy the page is to read and quote, broken down by area.</p></div>
+    <div class="point"><span class="pi"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg></span><h3>What to fix, in order</h3><p>Code to paste where it helps, and a link to the engine's own documentation for every finding.</p></div>
+    <p class="tryline" style="grid-column: 1 / -1"><button class="text" type="button" id="example">See an example report</button></p>
+  </div>
 
   <div id="report"></div>
 
   <footer>
-    Rules come from these guides. The score reports access and readability. It does not predict rankings or citations.
-    <a href="https://github.com/bharatisaket/ai-searchability/blob/main/docs/SPEC.md" target="_blank" rel="noopener">How the score is built</a>
-    <ul id="sources"></ul>
+    <p>Rules come from guides published by Google, Microsoft, OpenAI, Anthropic and Perplexity. The score reports access and readability. It does not predict rankings or citations.</p>
+    <details><summary>View the sources <svg class="ic chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg></summary><ul id="sources"></ul></details>
+    <p><a href="https://github.com/bharatisaket/ai-searchability/blob/main/docs/SPEC.md" target="_blank" rel="noopener">How the score is built</a> &middot; <a href="https://github.com/bharatisaket/ai-searchability" target="_blank" rel="noopener">Source on GitHub</a></p>
   </footer>
 </div>
 
@@ -246,22 +361,34 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   var E = window.AuditEngine;
   var $ = function (id) { return document.getElementById(id); };
   var LIVE_URL = 'https://quotable-6j8a.onrender.com/';
-  var SPEC_URL = 'https://github.com/bharatisaket/ai-searchability/blob/main/docs/SPEC.md';
   var live = false;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function src(s) { return s ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + '</a>' : ''; }
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
   function list(names) { return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]; }
 
-  var STATE = {
-    open: ['Open', 's-good'], partial: ['Partly open', 's-warn'], blocked: ['Blocked', 's-bad'],
-    firewall: ['Check firewall', 's-bad'], restricted: ['Opted out', 's-bad'], signin: ['Sign-in required', 's-bad'],
-    unknown: ['Not checked', 's-idle']
+  var ICON = {
+    chev: '<path d="M6 4l4 4-4 4"/>', check: '<path d="M3.5 8.5l3 3 6-7"/>', x: '<path d="M4 4l8 8M12 4l-8 8"/>',
+    alert: '<path d="M8 2.5l6 10.5H2zM8 6.5v3M8 11.4v.1"/>', minus: '<path d="M4 8h8"/>',
+    copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5"/>',
+    link: '<path d="M7 9a3 3 0 0 0 4.2 0l2-2A3 3 0 0 0 9 2.8l-.8.7M9 7a3 3 0 0 0-4.2 0l-2 2A3 3 0 0 0 7 13.2l.8-.7"/>',
+    ext: '<path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/>', back: '<path d="M10 4L6 8l4 4"/>'
   };
-  var CHECK = { pass: ['Pass', 's-good'], warn: ['Partial', 's-warn'], fail: ['Fail', 's-bad'], na: ['Not applicable', 's-idle'] };
-  var LEVEL = { blocker: ['Blocking', 's-bad'], warning: ['Worth fixing', 's-warn'], fix: ['Worth fixing', 's-warn'], improve: ['Optional', 's-idle'] };
+  function icon(name, cls) { return '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 16 16" aria-hidden="true">' + ICON[name] + '</svg>'; }
+  var CHEV = icon('chev', 'chev');
+  function src(s) { return s ? '<a class="srclink" href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + icon('ext') + '</a>' : ''; }
+
+  // One vocabulary: engine states, severity, check results, page ratings.
+  var STATE = {
+    open: ['Open', 'good', 'check'], partial: ['Partly open', 'warn', 'alert'], blocked: ['Blocked', 'bad', 'x'],
+    firewall: ['Blocked by firewall', 'bad', 'x'], restricted: ['Opted out', 'bad', 'x'], signin: ['Needs sign-in', 'bad', 'x'],
+    unknown: ['Not checked', 'idle', 'minus']
+  };
+  var SEVERITY = { blocker: ['Blocking', 'blocker'], warning: ['Should fix', 'fix'], fix: ['Should fix', 'fix'], improve: ['Optional', 'opt'] };
+  var RESULT = { pass: ['Pass', 'p-pass'], warn: ['Partial', 'p-warn'], fail: ['Fail', 'p-fail'], na: ['Not applicable', 'p-na'] };
+  var BAND = { strong: ['Strong', 'good'], fair: ['Fair', 'warn'], weak: ['Weak', 'bad'] };
   var SHORT = { google: 'Google', bing: 'Copilot and Bing', chatgpt: 'ChatGPT', claude: 'Claude', perplexity: 'Perplexity' };
+  var ORDER = { blocker: 0, warning: 1, fix: 2, improve: 3 };
   var MANUAL = [
     ['gsc', 'Site is verified in Google Search Console, and the generative AI control is set to include the site', 'G2'],
     ['bwt', 'Site is added to Bing Webmaster Tools, the sitemap is submitted, and IndexNow is switched on', 'BING'],
@@ -288,70 +415,83 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     ua: { browser: 200, Googlebot: 200, Bingbot: 200, 'OAI-SearchBot': 200, 'ChatGPT-User': 200, 'Claude-SearchBot': 200, 'Claude-User': 200, PerplexityBot: 403, 'Perplexity-User': 200 }
   };
 
-  var shown = { page: null, site: null, detail: null };
-  var pagesView = { sort: 'none', blockersOnly: false };
+  var shown = { page: null, site: null };   // the reports on screen, for the copy buttons
+  var pagesView = { key: 'score', dir: 'asc', blockersOnly: false };
 
-  // ---------- small pieces ----------
+  // ---------- verdicts ----------
 
-  function snippetHtml(code, note, heading) {
-    return code ? (heading ? '<h3>' + heading + '</h3>' : '') + '<pre>' + esc(code) + '</pre>' + (note ? '<p class="small muted">' + note + '</p>' : '') : '';
-  }
-  var ROBOTS_NOTE = 'A bot that has its own group ignores the <code>*</code> group, so copy across any Disallow lines you still want to apply to it. Remove the bot from any group that disallows it.';
-
-  function actions(which) {
-    return '<div class="row">' + (live ? '<button class="copylink" type="button">Copy link</button>' : '') +
-      '<button class="copy" data-src="' + which + '" type="button">Copy as Markdown</button></div>';
-  }
-
-  // One sentence that says what the report found, before any numbers.
   function pageVerdict(r) {
     var shut = r.engines.filter(function (e) { return e.state !== 'open' && e.state !== 'unknown' && e.state !== 'partial'; });
     var partial = r.engines.filter(function (e) { return e.state === 'partial'; });
     var unknown = r.engines.filter(function (e) { return e.state === 'unknown'; });
     var names = function (a) { return list(a.map(function (e) { return SHORT[e.id]; })); };
-    if (shut.length === r.engines.length) return ['No AI search engine can use this page.', 'bad'];
-    if (shut.length) return [names(shut) + ' cannot use this page.', 'bad'];
-    if (partial.length) return ['Every engine can index this page, but ' + names(partial) + ' cannot fetch it on request.', 'warn'];
-    if (unknown.length) return ['Engine access was not checked, because no robots.txt was provided.', 'idle'];
-    return ['All ' + r.engines.length + ' AI search engines can reach this page.', 'good'];
+    if (shut.length === r.engines.length) return 'No AI search engine can use this page.';
+    if (shut.length) return names(shut) + ' cannot use this page.';
+    if (partial.length) return 'Every engine can index this page, but ' + names(partial) + ' cannot fetch it on request.';
+    if (unknown.length) return 'Engine access was not checked, because no robots.txt was provided.';
+    return 'All ' + r.engines.length + ' AI search engines can reach this page.';
   }
 
-  function engineRows(engines) {
-    return '<div class="engines">' + engines.map(function (e) {
-      var st = STATE[e.state];
-      return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + st[1] + '">' + st[0] + '</span><span class="why">' +
-        esc(e.reason) + (e.note && e.state !== 'open' ? ' ' + esc(e.note) : '') + '</span></div>';
-    }).join('') + '</div>';
+  function siteVerdict(r) {
+    var n = r.pages.length;
+    var shut = r.engines.filter(function (e) { return e.open === 0; }), some = r.engines.filter(function (e) { return e.open > 0 && e.open < e.total; });
+    var names = function (a) { return list(a.map(function (e) { return SHORT[e.id]; })); };
+    if (shut.length === r.engines.length) return 'No AI search engine can use any of the ' + n + ' pages audited.';
+    if (shut.length) return names(shut) + ' cannot use any of the ' + n + ' pages audited.';
+    if (some.length) {
+      var worst = Math.max.apply(null, some.map(function (e) { return e.total - e.open; }));
+      return 'Engines can reach most of the site, but ' + plural(worst, 'page') + ' out of ' + n + ' ' + (worst === 1 ? 'is' : 'are') + ' closed to at least one engine.';
+    }
+    return 'All ' + r.engines.length + ' AI search engines can reach all ' + n + ' pages audited.';
   }
 
-  // ---------- insights: the fix list turned into actions ----------
+  // ---------- hero ----------
+
+  function ring(score, band, label) {
+    var rad = 42, c = 2 * Math.PI * rad, tone = BAND[band];
+    return '<div class="ringbox"><svg viewBox="0 0 104 104" role="img" aria-label="' + label + ': ' + score + ' out of 100, ' + tone[0] + '">' +
+      '<circle cx="52" cy="52" r="' + rad + '" fill="none" stroke="var(--idle-bg)" stroke-width="8"/>' +
+      '<circle cx="52" cy="52" r="' + rad + '" fill="none" stroke="var(--' + (tone[1] === 'warn' ? 'warn-mark' : tone[1]) + ')" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) +
+      '" stroke-dashoffset="' + (c * (1 - score / 100)).toFixed(1) + '" transform="rotate(-90 52 52)"/>' +
+      '<text class="n" x="52" y="58" text-anchor="middle">' + score + '</text><text class="of" x="52" y="74" text-anchor="middle">/ 100</text></svg>' +
+      '<div><div class="band t-' + tone[1] + '">' + tone[0] + '</div><div class="eyebrow">' + label + '</div></div></div>';
+  }
+
+  function shortUrl(u) { return u.length > 78 ? u.slice(0, 46) + '…' + u.slice(-28) : u; }
+
+  function hero(r, opts) {
+    return '<section class="card hero" id="hero" tabindex="-1">' + ring(r.score, r.band, opts.site ? 'Average score' : 'Page score') +
+      '<div><div class="eyebrow">' + esc(opts.eyebrow) + '</div><h2 class="verdict">' + esc(opts.verdict) + '</h2>' +
+      '<div class="hurl" title="' + esc(r.url) + '">' + esc(shortUrl(r.url)) + '</div>' + (opts.note ? '<p class="hnote">' + opts.note + '</p>' : '') + '</div>' +
+      '<div class="hact">' + (live && !opts.sample ? '<button class="ghost copylink" type="button">' + icon('link') + 'Copy link</button>' : '') +
+      '<button class="ghost copymd" type="button" data-src="' + (opts.site ? 'site' : 'page') + '">' + icon('copy') + 'Copy as Markdown</button></div></section>';
+  }
+
+  // ---------- fixes ----------
 
   function firstSentence(t) { var m = String(t).match(/^.*?[.!?](?=\s|$)/); return (m ? m[0] : String(t)).trim(); }
   function afterFirst(t) { return String(t).slice(firstSentence(t).length).trim(); }
   function union(a, b) { (b || []).forEach(function (x) { if (a.indexOf(x) < 0) a.push(x); }); return a; }
-  var ORDER = { blocker: 0, warning: 1, fix: 2, improve: 3 };
 
   // Engine problems with the same remedy become one action; every other fix becomes its own.
-  function buildInsights(r, isSite) {
-    var out = [], merged = {};
-    // With no schema at all, "schema matches the page" is the same job as "add schema": show one action worth both.
+  function buildFixes(r, isSite) {
+    var out = [], merged = {}, total = isSite ? r.pages.length : 1;
+    // With no schema at all, "schema matches the page" is the same job as "add schema": one action worth both.
     var noSchema = r.fixes.filter(function (f) { return f.id === 'M2' && f.detail === 'Nothing to compare.'; })[0];
     var addSchema = r.fixes.filter(function (f) { return f.id === 'M1'; })[0];
     r.fixes.forEach(function (f) {
-      if (f.kind === 'covered') return; // already explained by a robots.txt outage
-      if (f === noSchema && addSchema) return;
+      if (f.kind === 'covered' || (f === noSchema && addSchema)) return;
       if (f.kind === 'robots' || f.kind === 'firewall') {
         var m = merged[f.kind];
-        if (!m) {
-          m = merged[f.kind] = { level: f.level, kind: f.kind, engines: [], bots: [], pages: [], finding: f.detail, source: f.source, lost: 0, siteWide: false };
-          out.push(m);
-        }
+        if (!m) { m = merged[f.kind] = { level: f.level, engines: [], bots: [], pages: [], finding: f.detail, source: f.source, lost: 0, siteWide: false }; out.push(m); }
         if (ORDER[f.level] < ORDER[m.level]) m.level = f.level;
         union(m.engines, [SHORT[f.engine]]); union(m.bots, [f.bot]); union(m.pages, f.pages);
         return;
       }
-      out.push({ level: f.level, title: firstSentence(f.fix), more: afterFirst(f.fix), finding: isSite && !f.siteWide ? 'Check: ' + f.title : f.detail,
-        lost: (f.lost || 0) + (f === addSchema && noSchema ? noSchema.lost || 0 : 0), pages: f.pages || [], siteWide: !!f.siteWide, source: f.source,
+      var pages = f.pages || [];
+      out.push({ level: f.level, title: firstSentence(f.fix), more: afterFirst(f.fix),
+        finding: isSite && !f.siteWide ? 'On ' + pages.length + ' of ' + total + ' pages. For example: ' + f.detail : f.detail,
+        lost: (f.lost || 0) + (f === addSchema && noSchema ? noSchema.lost || 0 : 0), pages: pages, siteWide: !!f.siteWide, source: f.source,
         snippet: isSite && !f.siteWide ? '' : f.snippet, snippetNote: f.snippetNote });
     });
     if (merged.robots) {
@@ -366,222 +506,68 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       merged.firewall.more = 'Match on the user-agent and the operator\'s published IP ranges. The test request came from this tool, so confirm in your server logs.';
       merged.firewall.unblocks = merged.firewall.engines;
     }
+    out.forEach(function (x) { x.title = x.title.replace(/\.$/, ''); });
     return out;
   }
 
-  function insightItem(x, i, total) {
-    var lv = LEVEL[x.level], chips = '<span class="pill ' + lv[1] + '">' + lv[0] + '</span>';
-    if (x.unblocks) chips += '<span class="pill s-idle">Opens ' + esc(list(x.unblocks)) + '</span>';
-    if (total > 1) chips += '<span class="pill s-idle">' + (x.siteWide ? 'Whole site' : x.pages.length + ' of ' + total + ' pages') + '</span>';
-    if (x.lost) chips += '<span class="pill s-idle">+' + (total > 1 ? Math.round(x.lost / Math.max(1, x.pages.length)) + ' points a page' : x.lost + ' points') + '</span>';
-    return '<li class="insight ' + (x.level === 'blocker' ? 'i-bad' : x.level === 'improve' ? 'i-idle' : 'i-warn') + '"><span class="inum" aria-hidden="true">' + (i + 1) + '</span><div class="ibody">' +
-      '<h3>' + esc(x.title) + '</h3><div class="chips">' + chips + '</div>' +
-      '<p class="muted small">' + esc(x.finding) + '</p>' + (x.more ? '<p class="small">' + esc(x.more) + '</p>' : '') +
-      snippetHtml(x.snippet, esc(x.snippetNote || '')) +
-      (total > 1 && !x.siteWide && x.pages.length ? '<details class="affected"><summary>Pages affected</summary><ul>' + x.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>' : '') +
-      '<div class="small">' + src(x.source) + '</div></div></li>';
+  // The text a marketer can send to whoever looks after the site.
+  function forDeveloper(x) {
+    return [x.title + '.', '', 'Found: ' + x.finding, x.more, x.snippet ? '\n' + x.snippet + '\n' : '', x.snippetNote || '', 'Reference: ' + x.source.label + ' ' + x.source.url]
+      .filter(function (line) { return line !== ''; }).join('\n');
   }
 
-  // The blocking problems and the next three come first; the rest fold away below the dashboard.
-  function insightCards(r, isSite) {
-    var all = buildInsights(r, isSite), total = isSite ? r.pages.length : 1;
-    var lead = Math.min(5, all.filter(function (x) { return x.level === 'blocker'; }).length + 3);
-    var top = all.slice(0, lead), rest = all.slice(lead);
-    var gain = top.reduce(function (n, x) { return n + x.lost; }, 0) / total;
-    var after = Math.min(100, Math.round(r.score + gain));
-    var h = '<section class="card"><h2>Do these first</h2>';
-    if (!all.length) h += '<p>Nothing to fix. Every engine can reach ' + (isSite ? 'the pages audited' : 'this page') + ' and every check passed.</p>';
-    else {
-      h += '<p class="muted small">' + (after > r.score ? 'Doing ' + (top.length === 1 ? 'this' : 'these ' + top.length) + ' would lift the ' + (isSite ? 'average ' : '') + 'score from ' + r.score + ' to about ' + after + '. '
-        : '') + 'Problems that stop engines reaching the ' + (isSite ? 'site' : 'page') + ' come first.</p>' +
-        '<ol class="insights">' + top.map(function (x, i) { return insightItem(x, i, total); }).join('') + '</ol>';
+  var fixStore = [];
+  function fixRow(x, i, total, open) {
+    var sev = SEVERITY[x.level], meta = ['<b>' + sev[0] + '</b>'];
+    if (x.unblocks) meta.push('Opens ' + esc(list(x.unblocks)));
+    if (total > 1) meta.push(x.siteWide ? 'Whole site' : x.pages.length + ' of ' + total + ' pages');
+    var gain = x.lost ? '+' + (total > 1 ? Math.round(x.lost / Math.max(1, x.pages.length)) + ' pts a page' : x.lost + ' pts') : '';
+    var key = fixStore.push(x) - 1;
+    return '<li class="sev-' + sev[1] + '"><details class="fx"' + (open ? ' open' : '') + '><summary><span class="fxn">' + (i + 1) + '</span>' +
+      '<span><span class="fxtitle">' + esc(x.title) + '</span><span class="fxmeta">' + meta.join(' &middot; ') + '</span></span>' +
+      '<span class="fximpact">' + gain + '</span>' + CHEV + '</summary><div class="fxbody">' +
+      '<p class="found"><b>Found</b>' + esc(x.finding) + '</p>' + (x.more ? '<p>' + esc(x.more) + '</p>' : '') +
+      (x.snippet ? '<div class="code"><button type="button" class="copycode" aria-label="Copy code">' + icon('copy') + '</button><pre>' + esc(x.snippet) + '</pre></div>' +
+        (x.snippetNote ? '<p class="small muted">' + esc(x.snippetNote) + '</p>' : '') : '') +
+      (total > 1 && !x.siteWide && x.pages.length ? '<details class="affected"><summary>' + icon('chev', 'chev own') + 'Pages affected</summary><ul>' + x.pages.map(function (u) { return '<li>' + esc(u) + '</li>'; }).join('') + '</ul></details>' : '') +
+      '<div class="fxfoot">' + src(x.source) + '<button type="button" class="text copydev" data-fix="' + key + '">Copy for your developer</button></div></div></details></li>';
+  }
+
+  // Blocking problems and the next three lead; the rest move to "More detail".
+  function fixCards(r, isSite) {
+    var all = buildFixes(r, isSite), total = isSite ? r.pages.length : 1;
+    var blockers = all.filter(function (x) { return x.level === 'blocker'; }).length;
+    var lead = Math.min(5, blockers + 3), top = all.slice(0, lead), rest = all.slice(lead);
+    var after = Math.min(100, Math.round(r.score + top.reduce(function (n, x) { return n + x.lost; }, 0) / total));
+    var h = '<section class="card"><div class="chead"><h2>Fix first</h2>' +
+      (after > r.score ? '<span class="gain num"><span>' + (isSite ? 'Average score' : 'Score') + ' if fixed</span>' + r.score + ' &rarr; ' + after + '</span>' : '') + '</div>';
+    if (!all.length) h += '<p class="sub">Nothing to fix. Every engine can reach ' + (isSite ? 'the pages audited' : 'this page') + ' and every check passed.</p>';
+    else h += '<p class="sub">' + (blockers ? 'Problems that keep an engine out come first.' : 'Nothing is keeping an engine out. These are the checks that cost the most points.') + '</p>' +
+      '<ol class="fixlist" style="margin-top:8px">' + top.map(function (x, i) { return fixRow(x, i, total, x.level === 'blocker' || (i === 0 && !blockers)); }).join('') + '</ol>';
+    return { top: h + '</section>', rest: rest, start: top.length, total: total };
+  }
+
+  // ---------- rail: engine access and score by area ----------
+
+  function engineCard(r, isSite) {
+    var h = '<section class="card"><h2 style="margin-bottom:12px">Engine access</h2>';
+    if (!isSite) {
+      h += '<ul class="englist">' + r.engines.map(function (e) {
+        var st = STATE[e.state];
+        return '<li><span class="t-' + st[1] + '">' + icon(st[2]) + '</span><span class="ename">' + esc(e.name) + '</span><span class="estate t-' + st[1] + '">' + st[0] + '</span>' +
+          (e.state === 'open' ? '' : '<p class="ewhy">' + esc(e.reason) + (e.note ? ' ' + esc(e.note) : '') + '</p>') + '</li>';
+      }).join('') + '</ul>';
+      return h + '</section>';
     }
-    h += '</section>';
-    var more = rest.length ? '<details class="card fold"><summary><h2>Everything else to fix <span class="count">' + rest.length + '</span></h2></summary>' +
-      '<ol class="insights">' + rest.map(function (x, i) { return insightItem(x, i + top.length, total); }).join('') + '</ol></details>' : '';
-    return { top: h, more: more };
-  }
-
-  // ---------- the summary dashboard ----------
-
-  function tile(label, value, unit, note, pill) {
-    return '<div class="tile"><div class="tlabel">' + label + '</div><div class="tvalue">' + value + (unit ? '<span class="tunit">' + unit + '</span>' : '') + '</div>' +
-      (pill ? '<span class="pill ' + pill[1] + '">' + pill[0] + '</span>' : '') + (note ? '<div class="tnote">' + note + '</div>' : '') + '</div>';
-  }
-  function bandPill(band) { return band === 'strong' ? ['Strong', 's-good'] : band === 'fair' ? ['Fair', 's-warn'] : ['Needs work', 's-bad']; }
-
-  function areaRows(areas) {
-    return '<div class="areas">' + areas.map(function (a) {
-      var shown = Math.round(a.earned * 10) / 10;
-      return '<div class="area"><span class="aname">' + esc(a.name) + '</span><span class="meter" title="' + esc(a.name) + ': ' + shown + ' of ' + a.max + ' points"><i style="width:' + (100 * a.earned / a.max) + '%"></i></span>' +
-        '<span class="avalue">' + shown + '<span class="muted">/' + a.max + '</span></span></div>';
-    }).join('') + '</div>';
-  }
-
-  function dashboard(r, isSite) {
-    var pages = isSite ? r.pages : null, n = isSite ? pages.length : 1;
-    var reports = isSite ? pages.map(function (p) { return p.report; }) : [r];
-    var blockers = buildInsights(r, isSite).filter(function (x) { return x.level === 'blocker'; }).length;
-    var open = isSite ? r.engines.filter(function (e) { return e.open === e.total; }).length : r.engines.filter(function (e) { return e.state === 'open'; }).length;
-    var unknown = !isSite && r.engines.every(function (e) { return e.state === 'unknown'; });
-
-    var areas = [], notes = [];
-    reports[0].groups.forEach(function (g, gi) {
-      if (g.unscored) {
-        var failing = {};
-        reports.forEach(function (rep) { rep.groups[gi].checks.forEach(function (c) { if (c.status === 'fail' || c.status === 'warn') failing[c.id] = true; }); });
-        var count = Object.keys(failing).length;
-        notes.push('<strong>' + esc(g.name) + '</strong>: ' + (count ? plural(count, 'issue') : 'no issues'));
-      } else {
-        areas.push({ name: g.name, max: g.max, earned: reports.reduce(function (sum, rep) { return sum + rep.groups[gi].earned; }, 0) / n });
-      }
-    });
-
-    var checks = reports[0].groups.reduce(function (all, g) { return all.concat(g.checks); }, []).filter(function (c) { return c.status !== 'na'; });
-    var passed = checks.filter(function (c) { return c.status === 'pass'; }).length;
-
-    var h = '<section class="card"><h2>Summary</h2><div class="tiles">' +
-      tile(isSite ? 'Average page score' : 'Page score', r.score, '/100', '', bandPill(r.band)) +
-      tile('Engines with full access', unknown ? '&ndash;' : open, unknown ? '' : ' of ' + r.engines.length, unknown ? 'Not checked without robots.txt' : isSite ? 'Reach every page audited' : 'Can reach this page', null) +
-      tile('Blocking problems', blockers, '', blockers ? 'Stop an engine using ' + (isSite ? 'pages' : 'the page') : 'None found', blockers ? ['Fix first', 's-bad'] : null) +
-      (isSite ? tile('Pages audited', n, '', r.errors.length ? plural(r.errors.length, 'page') + ' could not be fetched' : (r.sampled.source === 'sitemap' ? 'From the sitemap' : r.sampled.source === 'links' ? 'From links on the page' : 'No other pages found'), null)
-        : tile('Checks passed', passed, ' of ' + checks.length, 'Of the checks that apply', null)) +
-      '</div><div class="panels"><div class="panel"><h3>Engine access</h3>' + (isSite ? siteEngineRows(r) + exceptionsHtml(r) : engineRows(r.engines)) + '</div>' +
-      '<div class="panel"><h3>' + (isSite ? 'Average score by area' : 'Score by area') + '</h3>' + areaRows(areas) +
-      '<p class="small muted notscored">Not scored: ' + notes.join(' &middot; ') + '</p>';
-
-    if (isSite) {
-      var counts = { weak: 0, fair: 0, strong: 0 };
-      pages.forEach(function (p) { counts[p.band]++; });
-      var seg = [['weak', 'Needs work', 'var(--bad)'], ['fair', 'Fair', 'var(--warn)'], ['strong', 'Strong', 'var(--good)']];
-      h += '<h3 style="margin-top:6px">Pages by rating</h3><div class="split" role="img" aria-label="' + seg.map(function (s) { return counts[s[0]] + ' ' + s[1]; }).join(', ') + '">' +
-        seg.filter(function (s) { return counts[s[0]]; }).map(function (s) { return '<i title="' + s[1] + ': ' + plural(counts[s[0]], 'page') + '" style="flex:' + counts[s[0]] + ';background:' + s[2] + '"></i>'; }).join('') + '</div>' +
-        '<div class="legend">' + seg.map(function (s) { return '<span><i style="background:' + s[2] + '"></i>' + s[1] + ' <strong>' + counts[s[0]] + '</strong></span>'; }).join('') + '</div>';
-    }
-    h += '</div></div>';
-    if (!isSite && r.mode === 'paste') h += '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode. The home page checks run only when you paste the home page.</p>';
-    return h + '</section>';
-  }
-
-  function reportHead(r, which, heading, verdict, note) {
-    return '<div class="rhead"><div class="row" style="justify-content:space-between"><div><div class="eyebrow">' + heading + '</div><div class="mono rurl">' + esc(r.url) + '</div></div>' + actions(which) + '</div>' +
-      '<p class="verdict v-' + verdict[1] + '">' + esc(verdict[0]) + '</p>' + (note ? '<p class="small muted">' + note + '</p>' : '') + '</div>';
-  }
-
-  // Turns a plain card into one that folds, keeping its heading as the handle.
-  function fold(html, open) {
-    return html.replace(/<section class="card"><h2>(.*?)<\/h2>/g, '<details class="card fold"' + (open ? ' open' : '') + '><summary><h2>$1</h2></summary>').replace(/<\/section>/g, '</details>');
-  }
-
-  function checksCard(r) {
-    return '<section class="card"><h2>All checks</h2><p class="muted small">Limits such as 150 words or 120-word paragraphs are starting values chosen for this tool, not rules set by the engines. <a href="' + SPEC_URL + '" target="_blank" rel="noopener">How the score is built</a></p>' +
-      r.groups.map(function (g) {
-        var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
-        return '<details class="group"' + ((g.unscored ? bad : g.earned < g.max) ? ' open' : '') + '><summary><span class="gname"><strong>' + esc(g.name) + '</strong></span>' +
-          (g.unscored ? '<span class="small muted">not scored</span><span class="pts">' + (bad ? plural(bad, 'issue') : 'ok') + '</span>'
-            : '<span class="bar"><i style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="pts">' + g.earned + '/' + g.max + '</span>') + '</summary>' +
-          '<div class="tablewrap"><table><thead><tr><th>Check</th><th>Result</th><th>Points</th></tr></thead><tbody>' +
-          g.checks.map(function (c) {
-            var st = CHECK[c.status];
-            return '<tr title="Check ' + c.id + '"><td><strong>' + esc(c.title) + '</strong><div class="muted small">' + esc(c.detail) + ' ' + src(c.source) + '</div></td>' +
-              '<td><span class="pill ' + st[1] + '">' + st[0] + '</span></td><td class="n">' + (c.points ? c.earned + '/' + c.points : '&ndash;') + '</td></tr>';
-          }).join('') + '</tbody></table></div></details>';
-      }).join('') + '</section>';
-  }
-
-  function siteWideCards(r) {
-    var h = '<section class="card"><h2>Training crawlers</h2><p class="muted">These collect content for model training. Blocking them is your choice and does not change the score or your visibility in AI search.</p>' +
-      '<div class="tablewrap"><table><thead><tr><th>Bot</th><th>Operator</th><th>robots.txt</th><th>What blocking does</th></tr></thead><tbody>' +
-      r.training.map(function (t) {
-        var p = t.robots === 'allowed' ? 'Allowed' : t.robots === 'disallowed' ? 'Blocked' : 'Not checked';
-        return '<tr><td class="n">' + t.token + '</td><td>' + t.operator + '</td><td><span class="pill s-idle">' + p + '</span></td><td class="small">' + esc(t.meaning) + ' ' + src(t.source) + '</td></tr>';
-      }).join('') + '</tbody></table></div></section>';
-
-    h += '<section class="card"><h2>Check these yourself</h2><p class="muted">These live in accounts this tool cannot see. Ticks are saved in this browser.</p><ul class="checks">' +
-      MANUAL.map(function (m) { return '<li><label for="m-' + m[0] + '"><input type="checkbox" id="m-' + m[0] + '" data-k="' + m[0] + '"><span>' + esc(m[1]) + ' <span class="small">' + src(E.SOURCES[m[2]]) + '</span></span></label></li>'; }).join('') + '</ul></section>';
-
-    var llms = r.facts.llmsTxt === 'present' ? 'This site has an llms.txt file.' : r.facts.llmsTxt === 'absent' ? 'This site has no llms.txt file.' : 'llms.txt was not checked.';
-    return h + '<section class="card"><h2>Not scored, on purpose</h2><ul class="plain">' +
-      '<li><strong>llms.txt.</strong> ' + llms + ' Google says Search does not use it, so it earns no points either way. Other services may read it.</li>' +
-      '<li><strong>Chunking content.</strong> Google says there is no ideal page length. Only very long paragraphs are flagged, following Microsoft.</li>' +
-      '<li><strong>Special AI markup.</strong> None exists. Ordinary schema counts for 10 points because it must match the page.</li>' +
-      '<li><strong>Keyword variants and bought mentions.</strong> Not checked. ' + src(E.SOURCES.G2) + '</li></ul></section>';
-  }
-
-  // ---------- what changed since the last audit of the same address ----------
-
-  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
-
-  function snapshot(r) {
-    var issues = {};
-    r.fixes.forEach(function (f) { issues[f.id || f.title] = f.title; });
-    return { t: Date.now(), score: r.score, issues: issues };
-  }
-
-  function changesCard(r, kind) {
-    var key = 'quotable-last-' + kind + '-' + r.url.replace(/\/+$/, '').toLowerCase();
-    var before = null, now = snapshot(r);
-    try { before = JSON.parse(store(key)); } catch (e) { /* no earlier audit */ }
-    store(key, JSON.stringify(now));
-    if (!before || !before.issues) return '';
-    var fixed = Object.keys(before.issues).filter(function (k) { return !(k in now.issues); }).map(function (k) { return before.issues[k]; });
-    var added = Object.keys(now.issues).filter(function (k) { return !(k in before.issues); }).map(function (k) { return now.issues[k]; });
-    var when = new Date(before.t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-    var diff = now.score - before.score;
-    var h = '<section class="card changes"><h2>Since your last audit</h2><p class="muted small">Compared with the audit you ran in this browser on ' + esc(when) + '.</p>';
-    if (!diff && !fixed.length && !added.length) return h + '<p>Nothing has changed.</p></section>';
-    h += '<p><strong>Score ' + before.score + ' &rarr; ' + now.score + '</strong>' + (diff ? ' (' + (diff > 0 ? '+' : '') + diff + ')' : '') + '</p>';
-    if (fixed.length) h += '<p><span class="pill s-good">Fixed</span> ' + esc(fixed.join('; ')) + '</p>';
-    if (added.length) h += '<p><span class="pill s-bad">New</span> ' + esc(added.join('; ')) + '</p>';
-    return h + '</section>';
-  }
-
-  // ---------- rendering ----------
-
-  function intro() {
-    shown = { page: null, site: null, detail: null };
-    $('report').innerHTML = '<section class="card intro"><h2>What you get</h2><ul class="plain">' +
-      '<li><strong>Which engines can get in.</strong> Google AI Overviews, Copilot, ChatGPT search, Claude and Perplexity, checked against your robots.txt, firewall and index settings.</li>' +
-      '<li><strong>A page score out of 100</strong> for how easy the page is to read and quote.</li>' +
-      '<li><strong>A fix list in priority order</strong>, with code to paste where that helps. Each finding links to the engine\'s own documentation.</li></ul>' +
-      '<p class="small muted">The score reports access and readability. It does not predict rankings or citations.</p>' +
-      '<div><button type="button" id="example">See an example report</button></div></section>';
-  }
-
-  function render(r, isSample) {
-    shown = { page: r, site: null, detail: null };
-    var ins = insightCards(r, false);
-    $('report').innerHTML =
-      (isSample ? '<div class="notice"><strong>Example report.</strong> This is a made-up coffee roaster page with common mistakes. Enter your own address above to audit a real page.</div>' : '') +
-      reportHead(r, 'page', 'Page report', pageVerdict(r), '') + (isSample ? '' : changesCard(r, 'page')) +
-      ins.top + dashboard(r, false) + ins.more + fold(checksCard(r) + siteWideCards(r), false);
-    restoreChecklist();
-  }
-
-  function siteVerdict(r) {
-    var n = r.pages.length;
-    var shut = r.engines.filter(function (e) { return e.open === 0; }), some = r.engines.filter(function (e) { return e.open > 0 && e.open < e.total; });
-    var names = function (a) { return list(a.map(function (e) { return SHORT[e.id]; })); };
-    if (shut.length === r.engines.length) return ['No AI search engine can use any of the ' + n + ' pages audited.', 'bad'];
-    if (shut.length) return [names(shut) + ' cannot use any of the ' + n + ' pages audited.', 'bad'];
-    if (some.length) {
-      var worst = Math.max.apply(null, some.map(function (e) { return e.total - e.open; }));
-      return ['Engines can reach most of the site, but ' + plural(worst, 'page') + ' out of ' + n + ' ' + (worst === 1 ? 'is' : 'are') + ' closed to at least one engine.', 'warn'];
-    }
-    return ['All ' + r.engines.length + ' AI search engines can reach all ' + n + ' pages audited.', 'good'];
-  }
-
-  function siteEngineRows(r) {
-    return '<div class="engines">' + r.engines.map(function (e) {
-      var pill = e.open === e.total ? ['Open', 's-good'] : e.open === 0 ? STATE[e.state] : ['Open on ' + e.open + ' of ' + e.total, 's-warn'];
-      var why = e.open === 0 ? e.example : '';
-      return '<div class="engine"><span class="name">' + esc(e.name) + '</span><span class="pill ' + pill[1] + '">' + pill[0] + '</span>' +
-        (why ? '<span class="why">' + esc(why) + '</span>' : '') + '</div>';
-    }).join('') + '</div>';
-  }
-
-  // Each kind of exception is stated once, with the engines and pages it covers.
-  function exceptionsHtml(r) {
+    var same = r.engines.every(function (e) { return e.open === r.engines[0].open; }), n = r.pages.length;
+    var row = function (name, e) {
+      var tone = e.open === e.total ? 'good' : e.open === 0 ? 'bad' : 'warn', ic = tone === 'good' ? 'check' : tone === 'bad' ? 'x' : 'alert';
+      return '<li><span class="t-' + tone + '">' + icon(ic) + '</span><span class="ename">' + esc(name) + '</span><span class="estate t-' + tone + ' num">' +
+        (e.open === e.total ? 'Open on all ' + n : e.open === 0 ? STATE[e.state][0] : 'Open on ' + e.open + ' of ' + e.total) + '</span>' +
+        (e.open === 0 && e.example ? '<p class="ewhy">' + esc(e.example) + '</p>' : '') + '</li>';
+    };
+    h += '<ul class="englist">' + (same ? row('All ' + r.engines.length + ' engines', r.engines[0]) : r.engines.map(function (e) { return row(e.name, e); }).join('')) + '</ul>';
+    // Each kind of exception is stated once, with the engines and pages it covers.
     var byState = {};
     r.engines.forEach(function (e) {
       if (e.open === 0 || e.open === e.total) return;
@@ -591,97 +577,258 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
         e.exceptions[state].forEach(function (u) { item.urls[u] = true; });
       });
     });
-    var states = Object.keys(byState);
-    if (!states.length) return '';
-    return '<ul class="plain small exceptions">' + states.map(function (state) {
+    var notes = Object.keys(byState).map(function (state) {
       var item = byState[state], urls = Object.keys(item.urls);
-      return '<li><strong>' + STATE[state][0] + '</strong> on ' + plural(urls.length, 'page') + ', for ' + (item.engines.length === r.engines.length ? 'every engine' : esc(list(item.engines))) + ': ' +
-        urls.slice(0, 3).map(esc).join(', ') + (urls.length > 3 ? ' and ' + (urls.length - 3) + ' more' : '') + '</li>';
-    }).join('') + '</ul>';
+      return '<p><strong class="t-' + STATE[state][1] + '">' + STATE[state][0] + '</strong> on ' + plural(urls.length, 'page') +
+        (item.engines.length === r.engines.length ? '' : ', for ' + esc(list(item.engines))) + ': ' +
+        urls.slice(0, 3).map(function (u) { return esc(pathOf(u, r.url)); }).join(', ') + (urls.length > 3 ? ' and ' + (urls.length - 3) + ' more' : '') + '</p>';
+    });
+    notes.push('<p>The firewall test ran on the page you entered only.</p>');
+    return h + '<div class="notes">' + notes.join('') + '</div></section>';
   }
 
-  function pageRows() {
-    var r = shown.site, rows = r.pages.map(function (p, i) { return { p: p, i: i }; });
-    if (pagesView.blockersOnly) rows = rows.filter(function (x) { return x.p.report.fixes.some(function (f) { return f.level === 'blocker'; }); });
-    if (pagesView.sort !== 'none') rows.sort(function (a, b) { return pagesView.sort === 'asc' ? a.p.score - b.p.score : b.p.score - a.p.score; });
-    if (!rows.length) return '<tr><td colspan="4" class="muted">No pages match.</td></tr>';
-    return rows.map(function (x) {
-      var p = x.p, pill = bandPill(p.band);
-      return '<tr><td><button class="link" type="button" data-page="' + x.i + '">' + esc(p.url) + '</button></td><td class="n">' + p.score + '</td>' +
-        '<td><span class="pill ' + pill[1] + '">' + pill[0] + '</span></td><td class="n">' + p.issues + '</td></tr>';
-    }).join('');
+  function areaCard(r, isSite) {
+    var reports = isSite ? r.pages.map(function (p) { return p.report; }) : [r], n = reports.length;
+    var rows = reports[0].groups.map(function (g, gi) {
+      if (g.unscored) {
+        var failing = {};
+        reports.forEach(function (rep) { rep.groups[gi].checks.forEach(function (c) { if (c.status === 'fail' || c.status === 'warn') failing[c.id] = true; }); });
+        var count = Object.keys(failing).length;
+        return '<button type="button" class="area flat" data-group="' + g.id + '"><span>' + esc(g.name) + '</span><span class="astate t-' + (count ? 'warn' : 'good') + '">' + (count ? plural(count, 'issue') : 'No issues') + '</span></button>';
+      }
+      var earned = reports.reduce(function (sum, rep) { return sum + rep.groups[gi].earned; }, 0) / n, ratio = earned / g.max, shownVal = Math.round(earned * 10) / 10;
+      return '<button type="button" class="area" data-group="' + g.id + '"><span>' + esc(g.name) + '</span>' +
+        '<span class="meter" aria-hidden="true"><i class="' + (ratio >= 0.9 ? 'f-good' : ratio >= 0.5 ? 'f-warn' : 'f-bad') + '" style="width:' + (100 * ratio) + '%"></i></span>' +
+        '<span class="aval">' + shownVal + '<span>/' + g.max + '</span></span></button>';
+    });
+    // Scored areas first, then the two groups that are reported without points.
+    rows = rows.filter(function (x) { return x.indexOf('area flat') < 0; }).concat(rows.filter(function (x) { return x.indexOf('area flat') >= 0; }));
+    var h = '<section class="card"><h2 style="margin-bottom:8px">' + (isSite ? 'Average score by area' : 'Score by area') + '</h2><div class="areas">' + rows.join('') + '</div>';
+    if (isSite && n >= 5) {
+      var counts = { strong: 0, fair: 0, weak: 0 };
+      r.pages.forEach(function (p) { counts[p.band]++; });
+      var seg = [['strong', 'var(--good)'], ['fair', 'var(--warn-mark)'], ['weak', 'var(--bad)']];
+      h += '<h3 style="margin-top:16px">Pages by rating</h3><div class="split" role="img" aria-label="' + seg.map(function (s) { return counts[s[0]] + ' ' + BAND[s[0]][0]; }).join(', ') + '">' +
+        seg.filter(function (s) { return counts[s[0]]; }).map(function (s) { return '<i title="' + BAND[s[0]][0] + ': ' + plural(counts[s[0]], 'page') + '" style="flex:' + counts[s[0]] + ';background:' + s[1] + '"></i>'; }).join('') + '</div>' +
+        '<div class="legend">' + seg.map(function (s) { return '<span><i style="background:' + s[1] + '"></i>' + BAND[s[0]][0] + ' <b>' + counts[s[0]] + '</b></span>'; }).join('') + '</div>';
+    }
+    return h + '</section>';
   }
 
-  function renderSite(r) {
-    shown = { page: null, site: r, detail: null };
-    pagesView = { sort: 'none', blockersOnly: false };
+  // ---------- more detail ----------
+
+  function moreRow(id, title, summary, body) {
+    return '<details id="' + id + '"><summary><h2>' + title + '</h2><span class="sum" id="' + id + 'Sum">' + summary + '</span>' + CHEV + '</summary><div class="body">' + body + '</div></details>';
+  }
+
+  function checksBody(r) {
+    return '<p class="small muted">Limits such as 150 words or 120-word paragraphs are starting values chosen for this tool, not rules set by the engines.</p>' +
+      '<div class="ckhead"><span>Check</span><span>Result</span><span>Points</span></div>' +
+      r.groups.map(function (g) {
+        var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
+        return '<details class="ckgroup" data-group="' + g.id + '"' + ((g.unscored ? bad : g.earned < g.max) ? ' open' : '') + '><summary><span class="gn">' + CHEV + esc(g.name) + '</span>' +
+          (g.unscored ? '<span class="small muted">Not scored</span><span class="ckpts t-' + (bad ? 'warn' : 'good') + '">' + (bad ? plural(bad, 'issue') : 'No issues') + '</span>'
+            : '<span class="meter" aria-hidden="true"><i class="' + (g.earned / g.max >= 0.9 ? 'f-good' : g.earned / g.max >= 0.5 ? 'f-warn' : 'f-bad') + '" style="width:' + (100 * g.earned / g.max) + '%"></i></span><span class="ckpts">' + g.earned + '/' + g.max + '</span>') + '</summary>' +
+          g.checks.map(function (c) {
+            var res = RESULT[c.status];
+            return '<div class="ckrow"><div><div>' + esc(c.title) + '</div><div class="d">' + esc(c.detail) + ' ' + src(c.source) + '</div></div>' +
+              '<div><span class="pill ' + res[1] + '">' + res[0] + '</span></div><div class="ckpts">' + (c.points ? c.earned + '/' + c.points : '') + '</div></div>';
+          }).join('') + '</details>';
+      }).join('');
+  }
+
+  function checksSummary(r) {
+    var all = r.groups.reduce(function (a, g) { return a.concat(g.checks); }, []).filter(function (c) { return c.status !== 'na'; });
+    var count = function (s) { return all.filter(function (c) { return c.status === s; }).length; };
+    return count('pass') + ' pass &middot; ' + count('warn') + ' partial &middot; ' + count('fail') + ' fail';
+  }
+
+  function manualDone() { return MANUAL.filter(function (m) { return store('quotable-' + m[0]) === '1'; }).length; }
+
+  function moreCard(r, fixes, first) {
+    var blocked = r.training.filter(function (t) { return t.robots === 'disallowed'; }).length, known = r.training.some(function (t) { return t.robots !== 'unknown'; });
+    var llms = r.facts.llmsTxt === 'present' ? 'This site has an llms.txt file.' : r.facts.llmsTxt === 'absent' ? 'This site has no llms.txt file.' : 'llms.txt was not checked.';
+    var rows = '';
+    if (fixes.rest.length) rows += moreRow('otherFixes', 'Other fixes', fixes.rest.length + ' more',
+      '<ol class="fixlist">' + fixes.rest.map(function (x, i) { return fixRow(x, i + fixes.start, fixes.total, false); }).join('') + '</ol>');
+    if (first) rows += moreRow('allChecks', 'All checks', checksSummary(first), checksBody(first));
+    rows += moreRow('training', 'Training crawlers', !known ? 'Not checked' : blocked ? blocked + ' of ' + r.training.length + ' blocked' : 'All allowed',
+      '<p class="small muted">These collect content for model training. Blocking them is your choice and does not change the score or your visibility in AI search.</p>' +
+      '<div class="tablewrap"><table><thead><tr><th>Bot</th><th>Operator</th><th>robots.txt</th><th>What blocking does</th></tr></thead><tbody>' +
+      r.training.map(function (t) {
+        return '<tr><td class="mono small">' + t.token + '</td><td>' + t.operator + '</td><td>' + (t.robots === 'allowed' ? 'Allowed' : t.robots === 'disallowed' ? 'Blocked' : 'Not checked') +
+          '</td><td class="small">' + esc(t.meaning) + ' ' + src(t.source) + '</td></tr>';
+      }).join('') + '</tbody></table></div>');
+    rows += moreRow('manual', 'Manual checks', manualDone() + ' of ' + MANUAL.length + ' done',
+      '<p class="small muted">These live in accounts this tool cannot see. Ticks are saved in this browser.</p><ul class="checks">' +
+      MANUAL.map(function (m) { return '<li><label><input type="checkbox" data-k="' + m[0] + '"' + (store('quotable-' + m[0]) === '1' ? ' checked' : '') + '><span>' + esc(m[1]) + ' ' + src(E.SOURCES[m[2]]) + '</span></label></li>'; }).join('') + '</ul>');
+    rows += moreRow('notScored', 'What is left out of the score', 'And why',
+      '<ul class="plain small"><li><strong>llms.txt.</strong> ' + llms + ' Google says Search does not use it, so it earns no points either way. Other services may read it.</li>' +
+      '<li><strong>Chunking content.</strong> Google says there is no ideal page length. Only very long paragraphs are flagged, following Microsoft.</li>' +
+      '<li><strong>Special AI markup.</strong> None exists. Ordinary schema counts for 10 points because it must match the page.</li>' +
+      '<li><strong>Keyword variants and bought mentions.</strong> Not checked. ' + src(E.SOURCES.G2) + '</li></ul>');
+    return '<section class="card more" aria-label="More detail">' + rows + '</section>';
+  }
+
+  // ---------- what changed since the last audit of the same address ----------
+
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+  function changes(r, kind) {
+    var key = 'quotable-last-' + kind + '-' + r.url.replace(/\/+$/, '').toLowerCase(), before = null;
+    var issues = {};
+    r.fixes.forEach(function (f) { issues[f.id || f.title] = f.title; });
+    try { before = JSON.parse(store(key)); } catch (e) { /* no earlier audit */ }
+    store(key, JSON.stringify({ t: Date.now(), score: r.score, issues: issues }));
+    if (!before || !before.issues) return '';
+    var fixed = Object.keys(before.issues).filter(function (k) { return !(k in issues); }).map(function (k) { return before.issues[k]; });
+    var added = Object.keys(issues).filter(function (k) { return !(k in before.issues); }).map(function (k) { return issues[k]; });
+    var when = new Date(before.t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }), diff = r.score - before.score;
+    var h = '<section class="card changes"><div class="chead"><h2>Since your last audit</h2><span class="sub">' + esc(when) + ', in this browser</span></div>';
+    if (!diff && !fixed.length && !added.length) return h + '<p>Nothing has changed.</p></section>';
+    h += '<p><strong class="num">Score ' + before.score + ' &rarr; ' + r.score + '</strong>' + (diff ? ' (' + (diff > 0 ? '+' : '') + diff + ')' : '') + '</p>';
+    if (fixed.length) h += '<p><strong class="t-good">Fixed:</strong> ' + esc(fixed.join('; ')) + '</p>';
+    if (added.length) h += '<p><strong class="t-bad">New:</strong> ' + esc(added.join('; ')) + '</p>';
+    return h + '</section>';
+  }
+
+  // ---------- rendering ----------
+
+  function stamp() { return new Date().toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  function hostOf(u) { try { return new URL(u).host; } catch (e) { return u; } }
+  function pathOf(u, base) { try { var a = new URL(u), b = new URL(base); return a.origin === b.origin ? (a.pathname + a.search) || '/' : u; } catch (e) { return u; } }
+
+  function show(html, title, focus) {
+    document.body.classList.add('has-report');
+    $('report').classList.remove('stale');
+    $('report').innerHTML = html;
+    document.title = title;
+    if (focus) { var h = $('hero'); if (h) { h.focus({ preventScroll: true }); h.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }
+  }
+
+  function intro() {
+    shown = { page: null, site: null };
+    document.body.classList.remove('has-report');
+    $('report').innerHTML = '';
+    document.title = 'Quotable: AI search audit';
+  }
+
+  function render(r, opts) {
+    opts = opts || {};
+    shown.page = r;
+    if (!opts.fromSite) shown.site = null;
+    fixStore = [];
+    var fixes = fixCards(r, false);
+    var paste = r.mode === 'paste' ? 'Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode.' : '';
+    show(
+      (opts.fromSite ? '<div><button type="button" class="text" id="back">' + icon('back') + ' Back to the site report</button></div>' : '') +
+      (opts.sample ? '<div class="banner"><span class="tag">Sample</span>A made-up coffee roaster page with common mistakes. Enter your own address above to audit a real page.</div>' : '') +
+      hero(r, { eyebrow: opts.sample ? 'Example page report' : 'Page report · ' + (r._when || (r._when = stamp())), verdict: pageVerdict(r), note: paste, sample: opts.sample }) +
+      '<div class="cols"><div class="main">' + (r._changes || '') + fixes.top + moreCard(r, fixes, r) + '</div>' +
+      '<div class="rail">' + engineCard(r, false) + areaCard(r, false) + '</div></div>',
+      r.score + '/100 · ' + hostOf(r.url) + ' · Quotable', opts.focus);
+  }
+
+  function pagesCard(r) {
+    var rows = r.pages.map(function (p, i) { return { p: p, i: i, blockers: p.report.fixes.filter(function (f) { return f.level === 'blocker'; }).length }; });
+    var withBlockers = rows.filter(function (x) { return x.blockers; }).length;
+    if (pagesView.blockersOnly) rows = rows.filter(function (x) { return x.blockers; });
+    var val = { score: function (x) { return x.p.score; }, issues: function (x) { return x.p.issues; }, page: function (x) { return x.p.url; } }[pagesView.key];
+    rows.sort(function (a, b) { var d = val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0; return pagesView.dir === 'asc' ? d : -d; });
+    var th = function (key, label, right) {
+      var on = pagesView.key === key;
+      return '<th' + (right ? ' class="r"' : '') + ' aria-sort="' + (on ? (pagesView.dir === 'asc' ? 'ascending' : 'descending') : 'none') + '"><button type="button" data-sort="' + key + '">' + label +
+        (on ? ' ' + (pagesView.dir === 'asc' ? '↑' : '↓') : '') + '</button></th>';
+    };
+    return '<section class="card pages" id="pagesCard"><div class="chead"><h2>Pages</h2>' +
+      (withBlockers ? '<button type="button" class="ghost toggle" id="blockersOnly" aria-pressed="' + pagesView.blockersOnly + '">Blocking only (' + withBlockers + ')</button>' : '') + '</div>' +
+      '<p class="sub">Choose a page to open its own report.</p>' +
+      '<div class="tablewrap" style="margin-top:8px"><table><thead><tr>' + th('page', 'Page') + th('score', 'Score', true) + '<th class="r">Blocking</th>' + th('issues', 'Issues', true) + '<th></th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (x) {
+        var tone = BAND[x.p.band][1];
+        return '<tr data-page="' + x.i + '"><td><button type="button" class="path" data-page="' + x.i + '">' + esc(pathOf(x.p.url, r.url)) + '</button></td>' +
+          '<td class="r"><span class="scorecell"><span class="meter" aria-hidden="true"><i class="f-' + tone + '" style="width:' + x.p.score + '%"></i></span><span class="num">' + x.p.score + '</span></span></td>' +
+          '<td class="r num' + (x.blockers ? ' t-bad' : ' muted') + '">' + (x.blockers || '–') + '</td><td class="r num">' + x.p.issues + '</td><td class="r muted">' + icon('chev') + '</td></tr>';
+      }).join('') : '<tr><td colspan="5" class="muted">No pages match.</td></tr>') + '</tbody></table></div></section>';
+  }
+
+  function renderSite(r, focus) {
+    shown = { page: null, site: r };
+    fixStore = [];
     var n = r.pages.length, sm = r.sampled;
-    var how = plural(n, 'page') + ' audited. ' + (sm.source === 'none' ? 'No other pages were found in a sitemap or in the links on that page.'
-      : sm.source === 'sitemap' ? 'Pages come from the sitemap, which lists ' + sm.listed + ' addresses. Legal and account pages, translations, files and pages that robots.txt closes to all crawlers are skipped.'
-      : 'Pages come from the links on the page you entered, because no sitemap was found.');
-    if (r.failed) how += ' The server stopped answering part way through, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
-    else if (r.stopped) how += ' You stopped the audit early, so ' + (sm.eligible - n - r.errors.length) + ' pages were not audited.';
+    var how = sm.source === 'none' ? 'No other pages were found in a sitemap or in the links on that page.'
+      : sm.source === 'sitemap' ? 'Pages come from the sitemap, which lists ' + sm.listed + ' addresses. Legal and account pages, translations, files and pages closed to all crawlers are skipped.'
+      : 'Pages come from the links on the page you entered, because no sitemap was found.';
+    var left = sm.eligible - n - r.errors.length;
+    if (r.failed) how += ' The server stopped answering part way through, so ' + plural(left, 'page') + ' were not audited.';
+    else if (r.stopped) how += ' You stopped the audit early, so ' + plural(left, 'page') + ' were not audited.';
     else if (sm.capped) how += ' The site has ' + sm.eligible + ' eligible pages; one audit covers ' + (n + r.errors.length) + ' of them, spread across its sections.';
-    how += ' The firewall test ran on the page you entered only.';
-
-    var ins = insightCards(r, true);
-    var pagesCard = '<section class="card"><div class="row" style="justify-content:space-between"><h2>Pages</h2>' +
-      '<label class="check"><input type="checkbox" id="blockersOnly"> Only pages with blocking problems</label></div>' +
-      '<p class="muted small">Choose a page to see its own report.</p>' +
-      '<div class="tablewrap"><table><thead><tr><th>Page</th><th><button class="link" type="button" id="sortScore" aria-label="Sort by score">Score <span id="sortMark" aria-hidden="true">&#8597;</span></button></th><th>Rating</th><th>Issues</th></tr></thead>' +
-      '<tbody id="pageRows"></tbody></table></div></section>';
-
-    $('report').innerHTML = reportHead(r, 'site', 'Site report', siteVerdict(r), how) + changesCard(r, 'site') +
-      ins.top + dashboard(r, true) + ins.more + pagesCard + '<div id="detail"></div>' + fold(siteWideCards(r), false);
-    $('pageRows').innerHTML = pageRows();
-    restoreChecklist();
+    if (r.errors.length) how += ' ' + plural(r.errors.length, 'page') + ' could not be fetched.';
+    var fixes = fixCards(r, true);
+    show(
+      hero(r, { site: true, eyebrow: 'Site report · ' + plural(n, 'page') + ' · ' + (r._when || (r._when = stamp())), verdict: siteVerdict(r), note: esc(how) }) +
+      '<div class="cols"><div class="main">' + (r._changes || '') + fixes.top + pagesCard(r) + moreCard(r, fixes, null) + '</div>' +
+      '<div class="rail">' + engineCard(r, true) + areaCard(r, true) + '</div></div>',
+      r.score + '/100 · ' + hostOf(r.url) + ' · Quotable', focus);
   }
 
-  function showDetail(i) {
-    var r = shown.site.pages[i].report;
-    shown.detail = r;
-    var ins = insightCards(r, false);
-    $('detail').innerHTML = reportHead(r, 'detail', 'Page report', pageVerdict(r), '') + ins.top + dashboard(r, false) + ins.more + fold(checksCard(r), false);
-    $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function restoreChecklist() {
-    Array.prototype.forEach.call(document.querySelectorAll('.checks input'), function (cb) { cb.checked = store('quotable-' + cb.dataset.k) === '1'; });
-  }
+  // ---------- events ----------
 
   function flash(btn, text) {
-    var old = btn.textContent; btn.textContent = text;
-    setTimeout(function () { btn.textContent = old; }, 1800);
+    var old = btn.innerHTML; btn.textContent = text;
+    setTimeout(function () { btn.innerHTML = old; }, 1600);
   }
   function copy(btn, text) {
     try { navigator.clipboard.writeText(text).then(function () { flash(btn, 'Copied'); }, function () { flash(btn, 'Copy was blocked'); }); } catch (e) { flash(btn, 'Copy was blocked'); }
   }
 
+  $('home').addEventListener('click', function () {
+    try { history.replaceState(null, '', location.pathname); } catch (e) { /* not allowed here */ }
+    $('url').value = ''; fieldError(''); $('msg').innerHTML = ''; intro(); $('url').focus();
+  });
+  $('example').addEventListener('click', function () { render(E.audit(SAMPLE), { sample: true, focus: true }); });
+
   $('report').addEventListener('change', function (ev) {
-    if (ev.target.matches('.checks input')) store('quotable-' + ev.target.dataset.k, ev.target.checked ? '1' : '0');
-    if (ev.target.id === 'blockersOnly') { pagesView.blockersOnly = ev.target.checked; $('pageRows').innerHTML = pageRows(); }
+    if (!ev.target.matches('.checks input')) return;
+    store('quotable-' + ev.target.dataset.k, ev.target.checked ? '1' : '0');
+    $('manualSum').textContent = manualDone() + ' of ' + MANUAL.length + ' done';
   });
   $('report').addEventListener('click', function (ev) {
-    var t = ev.target.closest('button');
+    var t = ev.target.closest('button'), row = ev.target.closest('tr[data-page]');
+    if (row && shown.site && (!t || t.dataset.page !== undefined)) return render(shown.site.pages[+row.dataset.page].report, { fromSite: true, focus: true });
     if (!t) return;
-    if (t.id === 'example') return render(E.audit(SAMPLE), true);
-    if (t.dataset.page !== undefined) return showDetail(+t.dataset.page);
-    if (t.id === 'sortScore') {
-      pagesView.sort = pagesView.sort === 'asc' ? 'desc' : 'asc';
-      $('sortMark').innerHTML = pagesView.sort === 'asc' ? '&#8593;' : '&#8595;';
-      t.setAttribute('aria-label', 'Sorted by score, ' + (pagesView.sort === 'asc' ? 'lowest first' : 'highest first'));
-      return void ($('pageRows').innerHTML = pageRows());
+    if (t.id === 'back') return renderSite(shown.site, true);
+    if (t.dataset.sort) {
+      pagesView.dir = pagesView.key === t.dataset.sort && pagesView.dir === 'asc' ? 'desc' : 'asc';
+      pagesView.key = t.dataset.sort;
+      return void ($('pagesCard').outerHTML = pagesCard(shown.site));
     }
+    if (t.id === 'blockersOnly') { pagesView.blockersOnly = !pagesView.blockersOnly; return void ($('pagesCard').outerHTML = pagesCard(shown.site)); }
+    if (t.dataset.group) {
+      var all = $('allChecks');
+      if (!all) return;
+      all.open = true;
+      var g = all.querySelector('.ckgroup[data-group="' + t.dataset.group + '"]');
+      g.open = true;
+      return g.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+    if (t.classList.contains('copycode')) {
+      var pre = t.parentNode.querySelector('pre').textContent, icn = t.innerHTML;
+      try { navigator.clipboard.writeText(pre).then(function () { t.innerHTML = icon('check'); setTimeout(function () { t.innerHTML = icn; }, 1600); }); } catch (e) { /* clipboard unavailable */ }
+      return;
+    }
+    if (t.classList.contains('copydev')) return copy(t, forDeveloper(fixStore[+t.dataset.fix]));
     if (t.classList.contains('copylink')) return copy(t, location.href);
-    if (t.classList.contains('copy')) {
-      var which = t.dataset.src;
-      copy(t, which === 'site' ? E.siteToMarkdown(shown.site) : E.toMarkdown(shown[which]));
-    }
+    if (t.classList.contains('copymd')) return copy(t, t.dataset.src === 'site' ? E.siteToMarkdown(shown.site) : E.toMarkdown(shown.page));
   });
 
-  function say(text, isErr) { $('msg').innerHTML = text ? '<div class="notice' + (isErr ? ' err' : '') + '">' + esc(text) + '</div>' : ''; }
-
   // ---------- running audits ----------
+
+  function fieldError(text) {
+    $('fieldError').hidden = !text;
+    $('fieldError').textContent = text || '';
+    if (text) $('url').setAttribute('aria-invalid', 'true'); else $('url').removeAttribute('aria-invalid');
+  }
 
   function post(path, body) {
     return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -696,35 +843,46 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     try { history.replaceState(null, '', '?url=' + encodeURIComponent(url) + (site ? '&scope=site' : '')); } catch (e) { /* not allowed here */ }
   }
 
+  function busy(on) {
+    var btn = $('run');
+    btn.disabled = on;
+    btn.innerHTML = on ? '<span class="spin"></span>Auditing' : 'Run audit';
+    if (on) { $('points').hidden = true; $('report').classList.add('stale'); }
+    else { $('points').hidden = false; $('report').classList.remove('stale'); }
+  }
+
   $('form').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var url = $('url').value.trim();
-    if (!url) return say('Enter the address of the page you want to audit.', true);
+    fieldError('');
+    if (!url) return fieldError('Enter the address of the page you want to audit.');
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-    try { new URL(url); } catch (e) { return say('That does not look like a web address. Try something like https://example.com/pricing', true); }
+    try { if (!/\./.test(new URL(url).hostname) && new URL(url).hostname !== 'localhost') throw 0; } catch (e) { return fieldError('That does not look like a web address. Try something like https://example.com/pricing'); }
 
     if (!live) {
       var html = $('html').value;
-      if (!html.trim()) return say('Paste the page source to audit it here.', true);
+      if (!html.trim()) return fieldError('Paste the page source below to audit it here.');
       var robotsTxt = $('robots').value;
-      say('');
-      render(E.audit({ url: url, page: { status: null, finalUrl: url, xRobotsTag: '', body: html },
-        robots: { status: robotsTxt.trim() ? 200 : 404, body: robotsTxt }, sitemap: { status: null }, llms: { status: null }, ua: null }), false);
-      return;
+      var report = E.audit({ url: url, page: { status: null, finalUrl: url, xRobotsTag: '', body: html },
+        robots: { status: robotsTxt.trim() ? 200 : 404, body: robotsTxt }, sitemap: { status: null }, llms: { status: null }, ua: null });
+      report._changes = changes(report, 'page');
+      return render(report, { focus: true });
     }
     var site = document.querySelector('input[name="scope"]:checked').value === 'site';
-    var btn = $('run'); btn.disabled = true; btn.textContent = 'Auditing';
-    if (site) say('Fetching the page and reading the sitemap.');
+    busy(true);
+    if (site) $('msg').innerHTML = '<section class="card progress"><div class="phead"><h2>Reading the sitemap</h2></div><div class="track"><i style="width:2%"></i></div></section>';
     (site ? post('api/collect-site', { url: url }) : collectWithSteps(url))
       .then(function (bundle) {
-        if (bundle.retryAfter) return say(bundle.error, true);
-        if (bundle.error) return say(bundle.error, true);
+        if (bundle.error) { $('msg').innerHTML = ''; return fieldError(bundle.error); }
         remember(url, site);
-        if (!site) { say(''); return render(E.audit(bundle), false); }
-        return auditWholeSite(bundle);
+        if (site) return auditWholeSite(bundle);
+        $('msg').innerHTML = '';
+        var report = E.audit(bundle);
+        report._changes = changes(report, 'page');
+        render(report, { focus: true });
       })
-      .catch(function () { say('The server did not answer. Wait a moment and try again.', true); })
-      .then(function () { btn.disabled = false; btn.textContent = 'Run audit'; });
+      .catch(function () { $('msg').innerHTML = ''; fieldError('The server did not answer. Wait a moment and try again.'); })
+      .then(function () { busy(false); });
   });
 
   // Fetches one page's bundle, showing each lookup as the server finishes it.
@@ -732,7 +890,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     var seen = {}, bots = [], botTotal = 8, atHome = true;
     try { var parsed = new URL(url); atHome = (parsed.pathname === '/' || parsed.pathname === '') && !parsed.search; } catch (e) { /* checked earlier */ }
     function row(done, bad, text) {
-      return '<li class="' + (done ? 'done' : '') + (bad ? ' bad' : '') + '"><span class="mark" aria-hidden="true">' + (!done ? '&middot;' : bad ? '!' : '&#10003;') + '</span><span>' + esc(text) + '</span></li>';
+      return '<li class="' + (done ? 'done' : '') + (bad ? ' bad' : '') + '">' + (!done ? '<span class="spin"></span>' : icon(bad ? 'alert' : 'check')) + '<span>' + esc(text) + '</span></li>';
     }
     function draw() {
       var p = seen.page, r = seen.robots, s = seen.sitemap, n = seen.notFound, h = seen.home;
@@ -745,9 +903,10 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       ];
       if (!atHome || h) rows.push(!h ? row(false, false, 'Reading the home page') : row(true, h.status !== 200, h.status === 200 ? 'Home page read' : 'Home page could not be read'));
       rows.push(bots.length < botTotal
-        ? row(false, false, 'Testing each AI crawler: ' + bots.length + ' of ' + botTotal + (bots.length ? ' (' + bots[bots.length - 1].token + ')' : ''))
+        ? row(false, false, 'Testing each AI crawler: ' + bots.length + ' of ' + botTotal)
         : row(true, blocked.length > 0, blocked.length ? plural(blocked.length, 'crawler') + ' refused: ' + list(blocked.map(function (b) { return b.token; })) : 'All ' + botTotal + ' crawlers got through'));
-      $('msg').innerHTML = '<div class="notice"><ul class="steps">' + rows.join('') + '</ul></div>';
+      var done = rows.filter(function (x) { return x.indexOf('class="done') > 0; }).length;
+      $('msg').innerHTML = '<section class="card progress"><div class="phead"><h2>Auditing ' + esc(hostOf(url)) + '</h2><span class="sub num">' + done + ' of ' + rows.length + ' steps</span></div><ul class="steps">' + rows.join('') + '</ul></section>';
     }
     function take(event) {
       if (event.step === 'bot') bots.push(event); else if (event.step) seen[event.step] = event;
@@ -757,7 +916,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     return fetch('api/collect-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) }).then(function (res) {
       // An older server, or a browser that cannot read a response as it arrives: ask the plain way.
       if (res.status === 404 || res.status === 405 || !res.body || !res.body.getReader) return post('api/collect', { url: url });
-      if (res.status !== 200) return res.json().then(function (json) { json.retryAfter = res.status === 429 ? 1 : 0; return json; });
+      if (res.status !== 200) return res.json();
       var reader = res.body.getReader(), decoder = new TextDecoder(), buffer = '', result = null;
       function handle(line) {
         if (!line.trim()) return;
@@ -786,9 +945,9 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     var errors = [], stopped = false, failed = false, at = 0;
     function progress(note) {
       var done = entries.length + errors.length;
-      $('msg').innerHTML = '<div class="notice"><div class="row" style="justify-content:space-between"><span>Audited ' + done + ' of ' + total +
-        ' pages.' + (note ? ' ' + esc(note) : '') + '</span><button type="button" id="stop">Stop and show results</button></div>' +
-        '<div class="bar" style="margin-top:10px"><i style="width:' + (100 * done / total) + '%"></i></div></div>';
+      $('msg').innerHTML = '<section class="card progress"><div class="phead"><h2>Auditing ' + esc(hostOf(site.origin || site.url)) + '</h2>' +
+        '<span class="sub"><span class="num">' + done + ' of ' + total + ' pages</span> &middot; <button type="button" class="text" id="stop">Stop and show results</button></span></div>' +
+        '<div class="track"><i style="width:' + Math.max(2, 100 * done / total) + '%"></i></div>' + (note ? '<p class="sub" style="margin-top:8px">' + esc(note) + '</p>' : '') + '</section>';
       $('stop').onclick = function () { stopped = true; this.disabled = true; this.textContent = 'Stopping'; };
     }
     function waitOrStop(seconds) { // a pause that ends as soon as the person presses Stop
@@ -811,26 +970,34 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       });
     }
     return Promise.resolve(next()).catch(function () { failed = true; }).then(function () {
-      say('');
+      $('msg').innerHTML = '';
       site.errors = errors;
       var report = E.buildSite(site, entries);
       report.stopped = stopped && at < queue.length;
       report.failed = failed;
-      renderSite(report);
+      report._changes = changes(report, 'site');
+      pagesView = { key: 'score', dir: 'asc', blockersOnly: false };
+      renderSite(report, true);
     });
   }
 
+  function note() {
+    var site = live && document.querySelector('input[name="scope"]:checked').value === 'site';
+    $('url').placeholder = site ? 'https://example.com' : 'https://example.com/pricing';
+    $('modeNote').innerHTML = site ? 'Audits every page in your sitemap, ten at a time. You can stop early and keep the results.'
+      : live ? 'Checks this page as each AI crawler would see it. Takes about ten seconds.'
+      : (/github\.io$/.test(location.hostname) ? 'This copy cannot fetch websites. <a href="' + LIVE_URL + '">Open the live app</a> to audit a page by its address, or paste the page source and robots.txt below.'
+        : 'No audit server is running here, so paste the page source and robots.txt below.');
+  }
   function setMode(isLive) {
     live = isLive;
     $('paste').hidden = isLive;
     $('scope').hidden = !isLive;
-    $('modeNote').innerHTML = isLive
-      ? 'Fetches the page and robots.txt, then requests the page as each AI crawler to spot firewall blocks. Whole site audits every page in your sitemap.'
-      : (/github\.io$/.test(location.hostname) ? 'This copy cannot fetch websites. <a href="' + LIVE_URL + '">Open the live app</a> to audit a page by its address, or paste the page source and robots.txt below.'
-        : 'No audit server is running here, so paste the page source and robots.txt below.');
+    note();
   }
+  $('scope').addEventListener('change', note);
 
-  $('sources').innerHTML = Object.keys(E.SOURCES).map(function (k) { return '<li>' + src(E.SOURCES[k]) + '</li>'; }).join('');
+  $('sources').innerHTML = Object.keys(E.SOURCES).map(function (k) { return '<li><a href="' + esc(E.SOURCES[k].url) + '" target="_blank" rel="noopener">' + esc(E.SOURCES[k].label) + '</a></li>'; }).join('');
   setMode(false);
   intro();
 

@@ -132,6 +132,7 @@
 
   var STOP = ' a an and are as at be by for from how in into is it of on or our that the this to we what when why with you your vs '.split(' ');
 
+  function pl(n, one, many) { return n + ' ' + (n === 1 ? one : many || one + 's'); }
   function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
   function words(s) { var t = norm(s); return t ? t.split(' ').length : 0; }
   function tokens(s) {
@@ -318,7 +319,7 @@
       check('I3', 'Snippets are allowed', 5, nosnippet ? 'fail' : snippetCap ? 'warn' : 'pass',
         nosnippet ? 'nosnippet or max-snippet:0 is set. Google keeps such pages out of AI Overviews and AI Mode.'
           : snippetCap ? 'max-snippet:' + snippetCap + ' limits previews to ' + snippetCap + ' characters, too short to quote a full sentence.'
-          : 'No snippet restriction found.' + (dataNosnippet ? ' ' + dataNosnippet + ' element(s) use data-nosnippet and are excluded from previews.' : ''),
+          : 'No snippet restriction found.' + (dataNosnippet ? ' ' + pl(dataNosnippet, 'element') + ' ' + (dataNosnippet === 1 ? 'uses' : 'use') + ' data-nosnippet and ' + (dataNosnippet === 1 ? 'is' : 'are') + ' excluded from previews.' : ''),
         'Remove nosnippet and max-snippet:0, and raise small max-snippet limits, unless you mean to opt out of AI answers on Google.', 'G1'),
       (function () {
         var c = canonical ? normUrl(new URL(canonical, pageUrl).href) : null, me = normUrl(pageUrl);
@@ -364,25 +365,25 @@
         !metaDesc ? 'No meta description.' : 'Description is ' + metaDesc.length + ' characters.',
         'Add a 50 to 160 character description that states the value or outcome of the page, without keyword stuffing.', 'MS'),
       check('S3', 'Exactly one H1', 5, h1s.length === 1 ? 'pass' : h1s.length > 1 ? 'warn' : 'fail',
-        h1s.length + ' H1 heading(s) found.' + (h1 ? ' First: "' + h1 + '"' : ''),
+        pl(h1s.length, 'H1 heading') + ' found.' + (h1 ? ' First: "' + h1 + '"' : ''),
         'Use one H1 that states the topic of the page.', 'MS'),
       check('S4', 'Title and H1 agree', 4, !title || !h1 ? 'fail' : align >= 0.5 ? 'pass' : 'fail',
         !title || !h1 ? 'Needs both a title and an H1 to compare.' : Math.round(align * 100) + '% of the meaningful words are shared between title and H1.',
         'Make the H1 match or closely reflect the title, so both set the same expectation.', 'MS'),
       check('S5', 'Subheadings break up the page', 5, wordCount <= 300 ? 'na' : subheads.length >= 2 ? 'pass' : subheads.length === 1 ? 'warn' : 'fail',
-        wordCount <= 300 ? 'Page is under 300 words, so subheadings are optional.' : subheads.length + ' H2/H3 heading(s) across ' + wordCount + ' words.',
+        wordCount <= 300 ? 'Page is under 300 words, so subheadings are optional.' : pl(subheads.length, 'H2 or H3 heading') + ' across ' + wordCount + ' words.',
         'Add H2 and H3 headings that mark where one idea ends and the next begins.', 'MS'),
       check('S6', 'Headings are descriptive', 3, vague.length === 0 ? 'pass' : vague.length === 1 ? 'warn' : 'fail',
-        vague.length ? 'Vague heading(s): ' + vague.map(function (h) { return '"' + h.text + '"'; }).join(', ') : 'No vague headings found.',
+        vague.length ? (vague.length === 1 ? 'Vague heading: ' : 'Vague headings: ') + vague.map(function (h) { return '"' + h.text + '"'; }).join(', ') : 'No vague headings found.',
         'Replace headings such as "Learn more" with ones that name the topic of the section.', 'MS'),
       check('S7', 'Lists or tables are used', 3, listsTables.length ? 'pass' : 'fail',
-        listsTables.length + ' list(s) or table(s) in the content.',
+        (listsTables.length ? pl(listsTables.length, 'list or table', 'lists or tables') : 'No lists or tables') + ' in the content.',
         'Put steps, comparisons and key features in lists or tables, which can be lifted cleanly into answers.', 'MS'),
       check('S8', 'A heading asks a question people search for', 2, questions.length ? 'pass' : 'fail',
         questions.length ? 'Found: "' + questions[0].text + '"' : 'No question-style headings found.',
         'Add a heading phrased as a real question, followed by a one to two sentence direct answer.', 'MS'),
       check('S9', 'No walls of text', 3, longParas === 0 ? 'pass' : longParas <= 2 ? 'warn' : 'fail',
-        longParas + ' paragraph(s) run over 120 words.',
+        (longParas ? pl(longParas, 'paragraph') + (longParas === 1 ? ' runs' : ' run') : 'No paragraphs run') + ' over 120 words.',
         'Split long paragraphs so each makes one point and still makes sense when quoted alone.', 'MS'),
       check('S10', 'No decorative symbols in title or headings', 1, deco.length ? 'fail' : 'pass',
         deco.length ? 'Found in: "' + deco[0] + '"' : 'None found.',
@@ -395,7 +396,7 @@
     var hasSchema = schemaItems.length > 0;
     var M = [
       check('M1', 'Schema markup is present and valid', 5, hasSchema ? (schemaBad ? 'warn' : 'pass') : jsonldRaw.length ? 'warn' : 'fail',
-        hasSchema ? 'JSON-LD types: ' + (schemaTypes.join(', ') || 'none declared') + (schemaBad ? '. ' + schemaBad + ' block(s) failed to parse.' : '.')
+        hasSchema ? 'JSON-LD types: ' + (schemaTypes.join(', ') || 'none declared') + (schemaBad ? '. ' + pl(schemaBad, 'block') + ' failed to parse.' : '.')
           : jsonldRaw.length ? 'JSON-LD is present but does not parse.' : 'No JSON-LD found.',
         'Add JSON-LD that labels what the page is, such as Article, Product, FAQPage or Organization. Google does not require it for AI features; Microsoft recommends it.', 'MS'),
       check('M2', 'Schema matches the visible page', 5, !hasSchema ? 'fail' : !schemaNames.length ? 'warn' : schemaMatch ? 'pass' : 'fail',
@@ -411,7 +412,7 @@
         !sitemapKnown ? 'Not checked in paste mode.' : robots.sitemaps.length ? 'robots.txt declares: ' + robots.sitemaps[0] : sitemapStatus === 200 ? 'Found at /sitemap.xml, but robots.txt does not declare it.' : 'No sitemap in robots.txt or at /sitemap.xml.',
         'Publish an XML sitemap and declare it in robots.txt with a Sitemap: line. Submit it in Search Console and Bing Webmaster Tools.', 'BING'),
       check('D2', 'Page links to other pages on the site', 5, internalCount >= 3 ? 'pass' : internalCount >= 1 ? 'warn' : 'fail',
-        internalCount + ' internal page(s) linked from this page.',
+        (internalCount ? pl(internalCount, 'internal page') : 'No internal pages') + ' linked from this page.',
         'Link to related pages on your site with descriptive link text, so crawlers can find them.', 'G1')
     ];
 
@@ -450,7 +451,7 @@
         'Add Organization JSON-LD to the home page with name, url and logo, so engines can tie the site to the right business. Use Person for a personal site.', 'G6'),
       check('E2', 'Organization links to its official profiles', 0,
         !home || !home.org ? 'na' : home.sameAs.length ? 'pass' : 'fail',
-        !home ? homeNote : !home.org ? 'Needs Organization data first.' : home.sameAs.length ? home.sameAs.length + ' profile link(s) in sameAs.' : 'The Organization data has no sameAs links.',
+        !home ? homeNote : !home.org ? 'Needs Organization data first.' : home.sameAs.length ? pl(home.sameAs.length, 'profile link') + ' in sameAs.' : 'The Organization data has no sameAs links.',
         'List your official profiles, such as LinkedIn, Wikipedia or Crunchbase, in the Organization sameAs property.', 'G6'),
       check('E3', 'Article states when it was published and updated', 0,
         !isArticle ? 'na' : badDate ? 'warn' : published && modified ? 'pass' : published || modified || timeTags ? 'warn' : 'fail',
@@ -492,7 +493,7 @@
       check('A6', 'Redirects are short and server-side', 0, clientRedirect || (hops && hops.length > 2) ? 'fail' : hops ? 'pass' : 'na',
         clientRedirect ? 'The page redirects using ' + clientRedirect + ', which many crawlers do not follow.'
           : !hops ? 'Redirect chain not checked in paste mode.' : !hops.length ? 'The page loads without redirects.'
-          : hops.length + ' redirect(s) before the page loads (' + chain + ').',
+          : pl(hops.length, 'redirect') + ' before the page loads (' + chain + ').',
         'Redirect on the server with a single 301 or 308, straight to the final address.', 'G5'),
       check('A7', 'Content is readable without signing in', 0, signIn ? 'fail' : 'pass',
         signIn || 'No sign-in wall found.',
@@ -614,7 +615,7 @@
     r.groups.forEach(function (g) {
       if (!g.unscored) return lines.push('- ' + g.name + ': ' + g.earned + '/' + g.max);
       var bad = g.checks.filter(function (c) { return c.status === 'fail' || c.status === 'warn'; }).length;
-      lines.push('- ' + g.name + ' (not scored): ' + (bad ? bad + ' issue(s)' : 'no issues'));
+      lines.push('- ' + g.name + ' (not scored): ' + (bad ? pl(bad, 'issue') : 'no issues'));
     });
     return lines.join('\n');
   }
