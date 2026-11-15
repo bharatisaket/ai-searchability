@@ -157,6 +157,33 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(b['sitemap']['status'], 404)
         self.assertEqual(b['llms']['status'], 200)
 
+    def test_stream_reports_each_step_then_the_bundle(self):
+        req = urllib.request.Request(self.app_url + '/api/collect-stream', json.dumps({'url': self.big_url + '/pricing'}).encode(),
+                                     {'Content-Type': 'application/json'})
+        lines = [json.loads(line) for line in urllib.request.urlopen(req).read().decode().splitlines()]
+        steps = lines[:-1]
+        self.assertEqual(steps[0], {'step': 'page', 'status': 200, 'redirects': 0})        # the page comes first
+        self.assertEqual(sorted(s['step'] for s in steps if s['step'] != 'bot'),
+                         ['home', 'llms', 'notFound', 'page', 'robots', 'sitemap'])
+        self.assertEqual(sorted(s['token'] for s in steps if s['step'] == 'bot'), sorted(server.BOT_UAS))
+        bundle = lines[-1]['done']
+        self.assertEqual(bundle, dict(self.post(self.big_url + '/pricing'), notFound=bundle['notFound']))
+        self.assertEqual(list(bundle['ua']), ['browser'] + list(server.BOT_UAS))
+
+    def test_stream_reports_errors_and_rate_limits(self):
+        def stream(url):
+            req = urllib.request.Request(self.app_url + '/api/collect-stream', json.dumps({'url': url}).encode(),
+                                         {'Content-Type': 'application/json'})
+            return urllib.request.urlopen(req).read().decode().splitlines()
+        self.assertIn('error', json.loads(stream('ftp://example.com/')[-1]))
+        home = [json.loads(line) for line in stream(self.big_url + '/')]
+        self.assertNotIn('home', [s.get('step') for s in home])       # the page is the home page
+        server.LIMITER = server.RateLimiter(1, 1000)
+        stream(self.site_url + '/page')
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            stream(self.site_url + '/page')
+        self.assertEqual(ctx.exception.code, 429)
+
     def test_firewall_block_is_detected_per_bot(self):
         ua = self.post(self.site_url + '/page')['ua']
         self.assertEqual(ua['PerplexityBot'], 403)

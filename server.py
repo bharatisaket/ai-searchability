@@ -8,6 +8,9 @@ Serves the app (index.html, engine.js) and two API routes:
   POST /api/collect  -> body {"url": "https://example.com/page"}
                         returns the bundle engine.js audits:
                         { url, page, robots, sitemap, llms, notFound, home, ua }
+  POST /api/collect-stream -> same body and bundle as /api/collect, sent as
+                        one JSON object per line: a {"step": ...} line as each
+                        lookup finishes, then {"done": bundle} or {"error": ...}
   POST /api/collect-site -> same body; fetches the entered page and lists
                         the rest of the site from its sitemap (or the page's
                         links): { url, origin, shared, sampled, pages, queue }
@@ -39,7 +42,7 @@ import threading
 import time
 import zlib
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urljoin, urlsplit
@@ -293,17 +296,41 @@ def fetch_home(origin):
         return {'status': None, 'body': ''}
 
 
-def collect(raw_url):
+def collect(raw_url, emit=None):
+    """Fetch everything one page audit needs. emit, if given, is called with a step as each lookup finishes."""
+    emit = emit or (lambda step: None)
     url = normalise_url(raw_url)
     page = fetch_entry(url)
-    origin = origin_of(page['finalUrl'])
+    final = page['finalUrl']
+    origin = origin_of(final)
+    emit({'step': 'page', 'status': page['status'], 'redirects': len(page['redirects'])})
     with ThreadPoolExecutor(max_workers=12) as pool:
-        shared = start_shared(pool, origin)
+        jobs = {
+            pool.submit(fetch_robots, origin): ('robots', None),
+            pool.submit(fetch_status, origin + '/sitemap.xml'): ('sitemap', None),
+            pool.submit(fetch_status, origin + '/llms.txt'): ('llms', None),
+            # A made-up address: a site that answers 200 here serves "soft 404" pages.
+            pool.submit(fetch_status, origin + '/quotable-check-' + secrets.token_hex(6)): ('notFound', None),
+        }
         # When the audited page is the home page, the engine reads these facts from the page itself.
-        home_job = None if is_home(page['finalUrl']) else pool.submit(fetch_home, origin)
-        ua = probe_bots(pool, page['finalUrl'], page['status'])
-        bundle = {'url': url, 'page': page, 'ua': ua, 'home': home_job.result() if home_job else None}
-        bundle.update(shared())
+        if not is_home(final):
+            jobs[pool.submit(fetch_home, origin)] = ('home', None)
+        for token, agent in BOT_UAS.items():
+            jobs[pool.submit(fetch_status, final, agent)] = ('bot', token)
+        bundle = {'url': url, 'page': page, 'ua': {'browser': page['status']}, 'home': None}
+        for job in as_completed(jobs):
+            kind, token = jobs[job]
+            value = job.result()
+            if kind == 'bot':
+                bundle['ua'][token] = value
+                emit({'step': 'bot', 'token': token, 'status': value})
+            elif kind in ('robots', 'home'):
+                bundle[kind] = value
+                emit({'step': kind, 'status': value['status']})
+            else:
+                bundle[kind] = {'status': value}
+                emit({'step': kind, 'status': value})
+        bundle['ua'] = dict([('browser', page['status'])] + [(t, bundle['ua'][t]) for t in BOT_UAS])
         return bundle
 
 
@@ -577,7 +604,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = urlsplit(self.path).path
-        if route not in ('/api/collect', '/api/collect-site', '/api/collect-pages'):
+        if route not in ('/api/collect', '/api/collect-stream', '/api/collect-site', '/api/collect-pages'):
             return self.send_json(404, {'error': 'Not found.'})
         site = route == '/api/collect-site'
         batch = route == '/api/collect-pages'
@@ -605,12 +632,38 @@ class Handler(BaseHTTPRequestHandler):
         if wait:
             return self.send_json(429, {'error': 'Too many audits right now. Try again in %d seconds.' % wait},
                                   {'Retry-After': str(wait)})
+        if route == '/api/collect-stream':
+            return self.stream(raw_url)
         try:
             self.send_json(200, collect_pages(urls) if batch else collect_site(raw_url) if site else collect(raw_url))
         except AuditError as e:
             self.send_json(200, {'error': str(e)})
         except Exception:
             self.send_json(200, {'error': 'Something went wrong while fetching that page.'})
+
+    def stream(self, raw_url):
+        """Answer with one JSON object per line, written as each lookup finishes."""
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/x-ndjson; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Accel-Buffering', 'no')  # ask proxies not to hold lines back
+        self.end_headers()
+
+        def emit(obj):
+            self.wfile.write(json.dumps(obj).encode('utf-8') + b'\n')
+            self.wfile.flush()
+
+        try:
+            try:
+                emit({'done': collect(raw_url, emit)})
+            except AuditError as e:
+                emit({'error': str(e)})
+            except OSError:
+                raise
+            except Exception:
+                emit({'error': 'Something went wrong while fetching that page.'})
+        except OSError:
+            pass  # the visitor closed the page
 
     def log_message(self, fmt, *args):
         sys.stderr.write('%s %s\n' % (self.address_string(), fmt % args))

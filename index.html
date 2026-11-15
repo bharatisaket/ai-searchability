@@ -82,6 +82,12 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .verdict { font: 600 20px/1.3 var(--display); text-wrap: balance; padding-left: 12px; border-left: 4px solid var(--idle); }
 .verdict.v-bad { border-color: var(--bad); } .verdict.v-warn { border-color: var(--warn); } .verdict.v-good { border-color: var(--good); }
 .exceptions { margin-top: 12px; overflow-wrap: anywhere; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.steps li { display: flex; gap: 9px; align-items: baseline; color: var(--muted); }
+.steps li.done { color: var(--ink); }
+.steps .mark { width: 1.1em; text-align: center; font-family: var(--mono); }
+.steps li.done .mark { color: var(--good); }
+.steps li.bad .mark { color: var(--bad); }
 details.more { margin-top: 2px; }
 details.more > summary { cursor: pointer; color: var(--accent); font-weight: 500; padding: 6px 0; }
 details.more[open] > summary { margin-bottom: 8px; }
@@ -578,9 +584,8 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
     }
     var site = document.querySelector('input[name="scope"]:checked').value === 'site';
     var btn = $('run'); btn.disabled = true; btn.textContent = 'Auditing';
-    say(site ? 'Fetching the page and reading the sitemap.'
-      : 'Fetching the page, robots.txt and testing each bot. This takes a few seconds.');
-    post(site ? 'api/collect-site' : 'api/collect', { url: url })
+    if (site) say('Fetching the page and reading the sitemap.');
+    (site ? post('api/collect-site', { url: url }) : collectWithSteps(url))
       .then(function (bundle) {
         if (bundle.retryAfter) return say(bundle.error, true);
         if (bundle.error) return say(bundle.error, true);
@@ -591,6 +596,58 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       .catch(function () { say('The server did not answer. Wait a moment and try again.', true); })
       .then(function () { btn.disabled = false; btn.textContent = 'Run audit'; });
   });
+
+  // Fetches one page's bundle, showing each lookup as the server finishes it.
+  function collectWithSteps(url) {
+    var seen = {}, bots = [], botTotal = 8, atHome = true;
+    try { var parsed = new URL(url); atHome = (parsed.pathname === '/' || parsed.pathname === '') && !parsed.search; } catch (e) { /* checked earlier */ }
+    function row(done, bad, text) {
+      return '<li class="' + (done ? 'done' : '') + (bad ? ' bad' : '') + '"><span class="mark" aria-hidden="true">' + (!done ? '&middot;' : bad ? '!' : '&#10003;') + '</span><span>' + esc(text) + '</span></li>';
+    }
+    function draw() {
+      var p = seen.page, r = seen.robots, s = seen.sitemap, n = seen.notFound, h = seen.home;
+      var blocked = bots.filter(function (b) { return [401, 403, 406, 429, 503].indexOf(b.status) >= 0; });
+      var rows = [
+        !p ? row(false, false, 'Fetching the page') : row(true, p.status !== 200, 'Page fetched: status ' + p.status + (p.redirects ? ' after ' + plural(p.redirects, 'redirect') : '')),
+        !r ? row(false, false, 'Reading robots.txt') : row(true, r.status === null || r.status >= 500, r.status === 200 ? 'robots.txt read' : r.status === null ? 'robots.txt could not be fetched' : 'No robots.txt (status ' + r.status + ')'),
+        !s ? row(false, false, 'Looking for a sitemap') : row(true, false, s.status === 200 ? 'Sitemap found at /sitemap.xml' : 'No sitemap at /sitemap.xml'),
+        !n ? row(false, false, 'Testing a missing page') : row(true, n.status === 200, n.status === 200 ? 'A missing page returned 200 instead of 404' : n.status === null ? 'Missing-page test could not run' : 'Missing pages return ' + n.status)
+      ];
+      if (!atHome || h) rows.push(!h ? row(false, false, 'Reading the home page') : row(true, h.status !== 200, h.status === 200 ? 'Home page read' : 'Home page could not be read'));
+      rows.push(bots.length < botTotal
+        ? row(false, false, 'Testing each AI crawler: ' + bots.length + ' of ' + botTotal + (bots.length ? ' (' + bots[bots.length - 1].token + ')' : ''))
+        : row(true, blocked.length > 0, blocked.length ? plural(blocked.length, 'crawler') + ' refused: ' + list(blocked.map(function (b) { return b.token; })) : 'All ' + botTotal + ' crawlers got through'));
+      $('msg').innerHTML = '<div class="notice"><ul class="steps">' + rows.join('') + '</ul></div>';
+    }
+    function take(event) {
+      if (event.step === 'bot') bots.push(event); else if (event.step) seen[event.step] = event;
+      if (event.step) draw();
+    }
+    draw();
+    return fetch('api/collect-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) }).then(function (res) {
+      // An older server, or a browser that cannot read a response as it arrives: ask the plain way.
+      if (res.status === 404 || res.status === 405 || !res.body || !res.body.getReader) return post('api/collect', { url: url });
+      if (res.status !== 200) return res.json().then(function (json) { json.retryAfter = res.status === 429 ? 1 : 0; return json; });
+      var reader = res.body.getReader(), decoder = new TextDecoder(), buffer = '', result = null;
+      function handle(line) {
+        if (!line.trim()) return;
+        var event = JSON.parse(line);
+        if (event.done) result = event.done; else if (event.error) result = { error: event.error }; else take(event);
+      }
+      function read() {
+        return reader.read().then(function (chunk) {
+          buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !chunk.done });
+          var lines = buffer.split('\n');
+          buffer = chunk.done ? '' : lines.pop();
+          lines.forEach(handle);
+          if (!chunk.done) return read();
+          if (!result) throw new Error('The audit ended early.');
+          return result;
+        });
+      }
+      return read();
+    });
+  }
 
   // Audits the entered page, then works through the rest of the site in batches.
   function auditWholeSite(site) {
