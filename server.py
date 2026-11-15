@@ -7,7 +7,7 @@ Serves the app (index.html, engine.js) and two API routes:
   GET  /api/health   -> {"ok": true}
   POST /api/collect  -> body {"url": "https://example.com/page"}
                         returns the bundle engine.js audits:
-                        { url, page, robots, sitemap, llms, notFound, ua }
+                        { url, page, robots, sitemap, llms, notFound, home, ua }
   POST /api/collect-site -> same body; fetches the entered page and lists
                         the rest of the site from its sitemap (or the page's
                         links): { url, origin, shared, sampled, pages, queue }
@@ -279,13 +279,30 @@ def probe_bots(pool, url, browser_status):
     return ua
 
 
+def is_home(url):
+    parts = urlsplit(url)
+    return parts.path in ('', '/') and not parts.query
+
+
+def fetch_home(origin):
+    """The site's home page, used for the checks on who runs the site."""
+    try:
+        status, _, _, text = fetch(origin + '/')
+        return {'status': status, 'body': text[:SITE_BODY] if status == 200 else ''}
+    except (AuditError, OSError, http.client.HTTPException):
+        return {'status': None, 'body': ''}
+
+
 def collect(raw_url):
     url = normalise_url(raw_url)
     page = fetch_entry(url)
+    origin = origin_of(page['finalUrl'])
     with ThreadPoolExecutor(max_workers=12) as pool:
-        shared = start_shared(pool, origin_of(page['finalUrl']))
+        shared = start_shared(pool, origin)
+        # When the audited page is the home page, the engine reads these facts from the page itself.
+        home_job = None if is_home(page['finalUrl']) else pool.submit(fetch_home, origin)
         ua = probe_bots(pool, page['finalUrl'], page['status'])
-        bundle = {'url': url, 'page': page, 'ua': ua}
+        bundle = {'url': url, 'page': page, 'ua': ua, 'home': home_job.result() if home_job else None}
         bundle.update(shared())
         return bundle
 
@@ -422,8 +439,10 @@ def collect_site(raw_url):
     origin = origin_of(entry['finalUrl'])
     with ThreadPoolExecutor(max_workers=12) as pool:
         shared_job = start_shared(pool, origin)
+        home_job = None if is_home(entry['finalUrl']) else pool.submit(fetch_home, origin)
         ua = probe_bots(pool, entry['finalUrl'], entry['status'])
         shared = shared_job()
+        shared['home'] = home_job.result() if home_job else {'status': entry['status'], 'body': entry['body'][:SITE_BODY]}
 
     robots_body = shared['robots']['body']
     listed = sitemap_urls(origin, robots_body)

@@ -11,6 +11,7 @@
  *   llms:    { status },                  // /llms.txt,    status null = not fetched
  *   ua:      { browser: 200, Googlebot: 200, ... } | null
  *   notFound:{ status },                  // a made-up URL on the site, status null = not fetched
+ *   home:    { status, body } | null       // the site's home page, when the audited page is not it
  *   live:    true when fetched by the server without per-bot requests (site-wide mode)
  * }
  * page.redirects = [{ status, url }, ...] lists each redirect hop, when known.
@@ -36,7 +37,11 @@
     LI: { label: 'LinkedIn: Unlocking AI Visibility', url: 'https://business.linkedin.com/advertise/resources/unlocking-ai-visibility' },
     HUB: { label: 'ChatGPT Business Hub', url: 'https://chatgpt.com/business-hub' },
     G4: { label: 'Google: HTTP status codes and soft 404 errors', url: 'https://developers.google.com/search/docs/crawling-indexing/http-network-errors' },
-    G5: { label: 'Google: Redirects and Google Search', url: 'https://developers.google.com/search/docs/crawling-indexing/301-redirects' }
+    G5: { label: 'Google: Redirects and Google Search', url: 'https://developers.google.com/search/docs/crawling-indexing/301-redirects' },
+    G6: { label: 'Google: Organization structured data', url: 'https://developers.google.com/search/docs/appearance/structured-data/organization' },
+    G7: { label: 'Google: Article structured data', url: 'https://developers.google.com/search/docs/appearance/structured-data/article' },
+    G8: { label: 'Google: Publication dates', url: 'https://developers.google.com/search/docs/appearance/publication-dates' },
+    G9: { label: 'Google: Creating helpful, reliable, people-first content', url: 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content' }
   };
 
   var ENGINES = [
@@ -147,6 +152,43 @@
     } catch (e) { return null; }
   }
 
+  // ---------- entity helpers ----------
+
+  var ORG_TYPES = /^(Organization|Corporation|LocalBusiness|OnlineBusiness|OnlineStore|Store|Restaurant|ProfessionalService|NGO|NewsMediaOrganization|EducationalOrganization|GovernmentOrganization|MedicalOrganization|Person)$/;
+  var ARTICLE_TYPES = /^(Article|BlogPosting|NewsArticle|TechArticle|ScholarlyArticle|Report|LiveBlogPosting)$/;
+
+  // Every typed object in a set of JSON-LD blocks, including nested ones such as publisher and author.
+  function flattenSchema(value, out, depth) {
+    out = out || []; depth = depth || 0;
+    if (!value || typeof value !== 'object' || depth > 6) return out;
+    if (Array.isArray(value)) { value.forEach(function (v) { flattenSchema(v, out, depth + 1); }); return out; }
+    if (value['@type']) out.push(value);
+    Object.keys(value).forEach(function (k) { flattenSchema(value[k], out, depth + 1); });
+    return out;
+  }
+  function hasType(item, re) { return [].concat(item['@type'] || []).some(function (t) { return re.test(String(t)); }); }
+  function parseJsonLd(blocks) {
+    var items = [];
+    blocks.forEach(function (raw) { try { flattenSchema(JSON.parse(raw), items); } catch (e) { /* counted elsewhere */ } });
+    return items;
+  }
+
+  // What the home page says about who runs the site.
+  function homeFacts(jsonldBlocks, links, homeUrl) {
+    var orgs = parseJsonLd(jsonldBlocks).filter(function (x) { return hasType(x, ORG_TYPES); });
+    var org = orgs.filter(function (o) { return o.name && o.url; })[0] || orgs[0] || null;
+    var sameAs = org ? [].concat(org.sameAs || []).filter(function (s) { return typeof s === 'string' && /^https?:/.test(s); }) : [];
+    var about = false, contact = false;
+    links.forEach(function (l) {
+      var href = l.href || '', text = norm(l.text), seg = '';
+      try { seg = new URL(href, homeUrl).pathname.toLowerCase().replace(/\/+$/, '').split('/').pop().replace(/\.[a-z]+$/, ''); } catch (e) { /* bad href */ }
+      if (/^(about|about-us|aboutus|company|who-we-are|our-story|team)$/.test(seg) || /\babout\b|our story|who we are/i.test(text)) about = true;
+      if (/^(contact|contact-us|contactus|support|help|get-in-touch)$/.test(seg) || /\bcontact\b|get in touch/i.test(text) || /^(mailto|tel):/i.test(href)) contact = true;
+    });
+    return { org: org, sameAs: sameAs, about: about, contact: contact };
+  }
+  var homeCache = { body: null, facts: null };
+
   // ---------- the audit ----------
 
   function audit(bundle, parse) {
@@ -171,6 +213,14 @@
     var scriptCount = q('script').length;
     var dataNosnippet = q('[data-nosnippet]').length;
     var anchorHrefs = q('a[href]').map(function (el) { return el.getAttribute('href'); });
+    var anchorLinks = q('a[href]').map(function (el) { return { href: el.getAttribute('href'), text: el.textContent }; });
+    var metaContent = function (sel) { var m = doc.querySelector(sel); return m ? norm(m.getAttribute('content')) : ''; };
+    var ogType = metaContent('meta[property="og:type" i]').toLowerCase();
+    var metaPublished = metaContent('meta[property="article:published_time" i]');
+    var metaModified = metaContent('meta[property="article:modified_time" i]') || metaContent('meta[property="og:updated_time" i]');
+    var metaAuthor = metaContent('meta[name="author" i]');
+    var timeTags = q('time[datetime]').length;
+    var authorMarks = q('a[rel~="author" i], [itemprop~="author" i]').length;
     var metaRefresh = q('meta[http-equiv="refresh" i]').map(function (m) { return m.getAttribute('content') || ''; })
       .filter(function (c) { return /url\s*=/i.test(c); });
     var jsRedirect = /\blocation(\.href)?\s*=[^=]|\blocation\.(replace|assign)\s*\(/.test(
@@ -364,6 +414,63 @@
         'Link to related pages on your site with descriptive link text, so crawlers can find them.', 'G1')
     ];
 
+    // ---------- entity and freshness checks (not scored) ----------
+    var allSchema = parseJsonLd(jsonldRaw);
+    var isHome = u && (u.pathname === '/' || u.pathname === '');
+    var home = null, homeNote = '';
+    if (bundle.home && bundle.home.status === 200) {
+      if (homeCache.body !== bundle.home.body) {
+        var hd = parse(bundle.home.body || '');
+        homeCache = { body: bundle.home.body, facts: homeFacts(
+          Array.prototype.slice.call(hd.querySelectorAll('script[type="application/ld+json" i]')).map(function (s) { return s.textContent; }),
+          Array.prototype.slice.call(hd.querySelectorAll('a[href]')).map(function (el) { return { href: el.getAttribute('href'), text: el.textContent }; }),
+          u ? u.origin + '/' : pageUrl) };
+      }
+      home = homeCache.facts;
+    } else if (isHome) {
+      home = homeFacts(jsonldRaw, anchorLinks, pageUrl);
+    } else {
+      homeNote = bundle.home ? 'The home page could not be fetched.' : 'The home page was not checked. Audit the home page to run this check.';
+    }
+    var articles = allSchema.filter(function (x) { return hasType(x, ARTICLE_TYPES); });
+    var isArticle = articles.length > 0 || ogType === 'article';
+    var pick = function (key) { return articles.map(function (x) { return x[key]; }).filter(Boolean)[0]; };
+    var published = pick('datePublished') || metaPublished, modified = pick('dateModified') || metaModified;
+    var badDate = [published, modified].filter(function (d) { return d && isNaN(Date.parse(d)); })[0];
+    var authors = [];
+    articles.forEach(function (x) {
+      [].concat(x.author || []).forEach(function (a) { var n = typeof a === 'string' ? a : a && a.name; if (typeof n === 'string' && n.trim()) authors.push({ name: n.trim(), linked: !!(a && (a.url || a.sameAs)) }); });
+    });
+    var E = [
+      check('E1', 'Home page says who runs the site', 0,
+        !home ? 'na' : !home.org ? 'fail' : home.org.name && home.org.url ? 'pass' : 'warn',
+        !home ? homeNote : !home.org ? 'No Organization or Person structured data on the home page.'
+          : home.org.name && home.org.url ? 'Organization data names "' + norm(home.org.name) + '".' : 'Organization data is present but lacks a name or url.',
+        'Add Organization JSON-LD to the home page with name, url and logo, so engines can tie the site to the right business. Use Person for a personal site.', 'G6'),
+      check('E2', 'Organization links to its official profiles', 0,
+        !home || !home.org ? 'na' : home.sameAs.length ? 'pass' : 'fail',
+        !home ? homeNote : !home.org ? 'Needs Organization data first.' : home.sameAs.length ? home.sameAs.length + ' profile link(s) in sameAs.' : 'The Organization data has no sameAs links.',
+        'List your official profiles, such as LinkedIn, Wikipedia or Crunchbase, in the Organization sameAs property.', 'G6'),
+      check('E3', 'Article states when it was published and updated', 0,
+        !isArticle ? 'na' : badDate ? 'warn' : published && modified ? 'pass' : published || modified || timeTags ? 'warn' : 'fail',
+        !isArticle ? 'Not marked up as an article, so dates are optional.' : badDate ? 'A date is present but is not a valid date: "' + badDate + '".'
+          : published && modified ? 'Published ' + String(published).slice(0, 10) + ', updated ' + String(modified).slice(0, 10) + '.'
+          : published ? 'Published ' + String(published).slice(0, 10) + ', with no updated date.' : modified ? 'Updated ' + String(modified).slice(0, 10) + ', with no published date.'
+          : timeTags ? 'A date is shown on the page but not in structured data.' : 'No published or updated date found.',
+        'Give datePublished and dateModified in the Article JSON-LD, show the same dates on the page, and keep them accurate.', 'G8'),
+      check('E4', 'Article names its author', 0,
+        !isArticle ? 'na' : authors.length ? (authors.some(function (a) { return a.linked; }) ? 'pass' : 'warn') : metaAuthor || authorMarks ? 'warn' : 'fail',
+        !isArticle ? 'Not marked up as an article, so an author is optional.'
+          : authors.length ? 'Author: ' + authors[0].name + (authors.some(function (a) { return a.linked; }) ? '.' : ', with no link to an author page or profile.')
+          : metaAuthor ? 'Author "' + metaAuthor + '" appears in a meta tag but not in structured data.' : authorMarks ? 'An author is marked on the page but not in structured data.' : 'No author found.',
+        'Name the author in the Article JSON-LD as a Person with a url to their author page or profile, and show the byline on the page.', 'G7'),
+      check('E5', 'Home page links to About and Contact pages', 0,
+        !home ? 'na' : home.about && home.contact ? 'pass' : home.about || home.contact ? 'warn' : 'fail',
+        !home ? homeNote : home.about && home.contact ? 'Both are linked from the home page.'
+          : home.about ? 'An About page is linked, but no Contact page or contact details.' : home.contact ? 'Contact details are linked, but no About page.' : 'Neither is linked from the home page.',
+        'Link an About page and a Contact page from the home page, so people and engines can see who is behind the site.', 'G9')
+    ];
+
     // ---------- access checks (not scored) ----------
     var nf = bundle.notFound ? bundle.notFound.status : null;
     var nfKnown = nf !== null && nf !== undefined;
@@ -397,7 +504,8 @@
       { id: 'R', name: 'Readable content', checks: R },
       { id: 'S', name: 'Answer structure', checks: S },
       { id: 'M', name: 'Schema', checks: M },
-      { id: 'D', name: 'Discovery', checks: D }
+      { id: 'D', name: 'Discovery', checks: D },
+      { id: 'E', name: 'Entity and freshness', checks: E, unscored: true }
     ];
     var score = 0;
     groups.forEach(function (g) {
@@ -450,7 +558,7 @@
       g.checks.forEach(function (c) {
         if (c.status === 'fail' || c.status === 'warn') {
           fixes.push({ level: (c.id === 'I1' || c.id === 'I2' || c.id === 'A7') && c.status === 'fail' ? 'blocker'
-            : c.status !== 'fail' ? 'improve' : g.unscored ? 'warning' : 'fix',
+            : c.status !== 'fail' ? 'improve' : g.id === 'A' ? 'warning' : 'fix',
             id: c.id, title: c.title, detail: c.detail, fix: c.fix, lost: c.points - c.earned, source: c.source });
         }
       });
@@ -496,13 +604,13 @@
   // ---------- site-wide audit ----------
 
   var STATE_RANK = ['blocked', 'signin', 'firewall', 'restricted', 'partial', 'unknown', 'open'];
-  var SITE_WIDE = ['A5', 'D1'];
+  var SITE_WIDE = ['A5', 'D1', 'E1', 'E2', 'E5'];
 
   // Audits one page of a site. shared = { robots, sitemap, llms, notFound } fetched once for the site.
   function auditSitePage(shared, p, parse) {
     shared = shared || {};
     var report = audit({ url: p.url, page: p.page, ua: p.ua || null, live: true,
-      robots: shared.robots, sitemap: shared.sitemap, llms: shared.llms, notFound: shared.notFound }, parse);
+      robots: shared.robots, sitemap: shared.sitemap, llms: shared.llms, notFound: shared.notFound, home: shared.home }, parse);
     return { url: p.url || report.url, finalUrl: report.url, score: report.score, band: report.band, issues: report.fixes.length, report: report };
   }
 

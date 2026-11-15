@@ -34,7 +34,7 @@ If you can share the LinkedIn PDF and the Bing page text, their rules can move f
 
 ## Audit rules
 
-The audit runs 29 automated checks in six groups. Access checks set each engine's status. The other five groups add up to the 100-point page score.
+The audit runs 34 automated checks in seven groups. Access checks set each engine's status. Five groups add up to the 100-point page score. Entity and freshness checks are reported but not scored.
 
 ### Access (per engine, not scored)
 
@@ -96,6 +96,18 @@ A5 to A7 appear in the Checks list as an unscored Access group. A failed A7 is a
 | --- | --- | --- | --- |
 | D1 | A sitemap is declared in robots.txt or served at /sitemap.xml | 5 | Bing 5, Google 3 |
 | D2 | The page links to at least three other pages on the same site | 5 | Google 1 |
+
+### Entity and freshness (not scored)
+
+| ID | Check | Source |
+| --- | --- | --- |
+| E1 | The home page carries Organization (or Person) JSON-LD with a name and url | Google: Organization structured data |
+| E2 | That Organization lists official profiles in sameAs | Google: Organization structured data |
+| E3 | A page marked up as an article gives datePublished and dateModified, and both are valid dates | Google: Publication dates |
+| E4 | A page marked up as an article names its author as a Person with a url | Google: Article structured data |
+| E5 | The home page links to an About page and a Contact page or contact details | Google: Creating helpful, reliable, people-first content |
+
+E1, E2 and E5 read the home page, which the server fetches once per audit. E3 and E4 apply only to pages with Article schema or `og:type` of article; other pages show N/A. The group is not scored because the guides present these as ways to make ownership and currency clear, not as requirements for AI features, and the 100-point weights have not been tuned to include them. Failures appear in the fix list below the scored checks.
 
 ### Manual checklist (ticked by the owner, not scored)
 

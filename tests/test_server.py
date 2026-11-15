@@ -194,6 +194,16 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.post(self.site_url + '/page')['notFound']['status'], 404)
         self.assertEqual(self.post(self.big_url + '/pricing')['notFound']['status'], 200)
 
+    def test_home_page_is_fetched_for_other_pages(self):
+        b = self.post(self.big_url + '/pricing')
+        self.assertEqual(b['home']['status'], 200)
+        self.assertIn('home guide', b['home']['body'])
+        self.assertIsNone(self.post(self.big_url + '/')['home'])     # the page is the home page
+        site = self.post(self.big_url + '/pricing', '/api/collect-site')
+        self.assertIn('home guide', site['shared']['home']['body'])
+        site = self.post(self.big_url + '/', '/api/collect-site')
+        self.assertIn('home guide', site['shared']['home']['body'])
+
     def test_redirect_hops_are_recorded(self):
         self.assertEqual(self.post(self.site_url + '/page')['page']['redirects'], [])
         hops = self.post(self.big_url + '/chain')['page']['redirects']

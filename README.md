@@ -14,7 +14,7 @@ Paste-only copy: https://bharatisaket.github.io/ai-searchability/
 | `engine.js` | The audit engine: one pure function that turns fetched page material into a report. |
 | `server.py` | Live-audit backend. Serves the app and fetches pages for it. |
 | `tests/test_server.py` | Server tests, run against a local test site. |
-| `docs/SPEC.md` | The spec: sources, the 29 audit rules, scoring model and limits. |
+| `docs/SPEC.md` | The spec: sources, the 34 audit rules, scoring model and limits. |
 
 ## Using it
 

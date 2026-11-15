@@ -256,7 +256,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
       '<button class="copy" data-src="' + src + '" type="button">Copy report as Markdown</button></div>' +
       '<div class="summary">' + dial(r.score, r.band, 'page score') + '<div><p class="small muted" style="margin-bottom:8px">' + open + ' of ' + r.engines.length + ' engines can fully reach this page</p>' +
       engineRows(r.engines, true) + '</div></div>' +
-      (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode.</p>' : '') +
+      (r.mode === 'paste' ? '<p class="small muted">Paste mode checks robots.txt rules and page content. The firewall test, sitemap lookup, redirect check and missing-page check need live mode. The home page checks run only when you paste the home page.</p>' : '') +
       '</section>';
   }
 
